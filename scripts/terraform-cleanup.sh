@@ -41,7 +41,7 @@ confirm() {
 check_terraform_init() {
     if [ ! -d "$TERRAFORM_DIR/.terraform" ]; then
         log "$RED" "ERROR: Terraform not initialized in $TERRAFORM_DIR"
-        log "$YELLOW" "Run './bootstrap-chaos-environment.sh' first to initialize Terraform"
+        log "$YELLOW" "Run './scripts/bootstrap-chaos-environment.sh' first to initialize Terraform"
         exit 1
     fi
 }

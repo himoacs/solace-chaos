@@ -33,7 +33,7 @@ A comprehensive chaos testing framework for Solace PubSub+ brokers, designed for
 
 4. **Start chaos testing**:
    ```bash
-   ./master-chaos.sh
+   ./scripts/master-chaos.sh
    ```
 
 That's it! The system will run continuously generating various error conditions.
@@ -99,19 +99,19 @@ terraform apply
 Use the chaos daemon for process management:
 ```bash
 # Start all components
-./chaos-daemon.sh start
+./scripts/chaos-daemon.sh start
 
 # Check status
-./chaos-daemon.sh status
+./scripts/chaos-daemon.sh status
 
 # Stop all components
-./chaos-daemon.sh stop
+./scripts/chaos-daemon.sh stop
 
 # Restart everything
-./chaos-daemon.sh restart
+./scripts/chaos-daemon.sh restart
 
 # Run as self-healing daemon
-./chaos-daemon.sh daemon &
+./scripts/chaos-daemon.sh daemon &
 ```
 
 ## Cleanup Options
@@ -120,7 +120,7 @@ Multiple cleanup scripts for different scenarios:
 
 ### Quick Cleanup (Processes Only)
 ```bash
-./quick-cleanup.sh
+./scripts/quick-cleanup.sh
 ```
 - Stops all chaos testing processes
 - Cleans up PID files and locks
@@ -129,7 +129,7 @@ Multiple cleanup scripts for different scenarios:
 
 ### Full Environment Cleanup
 ```bash
-./full-cleanup.sh
+./scripts/full-cleanup.sh
 ```
 - Interactive script with confirmation prompts
 - Stops all processes
@@ -140,7 +140,7 @@ Multiple cleanup scripts for different scenarios:
 
 ### Terraform Resources Only
 ```bash
-./terraform-cleanup.sh
+./scripts/terraform-cleanup.sh
 ```
 - Focused on destroying broker resources
 - Shows destruction plan before proceeding
@@ -149,7 +149,7 @@ Multiple cleanup scripts for different scenarios:
 - Use when you want to reset broker configuration
 
 ⚠️ **Cleanup Safety Notes:**
-- Always check what's running with `./chaos-daemon.sh status` first
+- Always check what's running with `./scripts/chaos-daemon.sh status` first
 - Terraform cleanup is **destructive** - it removes all broker resources
 - Full cleanup can reset your .env file to defaults
 - Logs are backed up before deletion (optional)

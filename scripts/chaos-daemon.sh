@@ -217,9 +217,9 @@ case "$1" in
         echo "  daemon  - Run as daemon with automatic restart of failed components"
         echo ""
         echo "Examples:"
-        echo "  ./chaos-daemon.sh start     # Start everything"
-        echo "  ./chaos-daemon.sh status    # Check what's running"
-        echo "  ./chaos-daemon.sh daemon &  # Run as background daemon"
+        echo "  ./scripts/chaos-daemon.sh start     # Start everything"
+        echo "  ./scripts/chaos-daemon.sh status    # Check what's running"
+        echo "  ./scripts/chaos-daemon.sh daemon &  # Run as background daemon"
         exit 1
         ;;
 esac

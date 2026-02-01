@@ -155,7 +155,7 @@ show_summary() {
     fi
     
     log "$BLUE" "Environment is now clean and ready for fresh setup!"
-    log "$YELLOW" "To restart the environment, run: ./bootstrap-chaos-environment.sh"
+    log "$YELLOW" "To restart the environment, run: ./scripts/bootstrap-chaos-environment.sh"
 }
 
 # Main execution

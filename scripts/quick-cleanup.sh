@@ -42,8 +42,8 @@ main() {
     
     log "$GREEN" "✅ All chaos processes stopped"
     log "$BLUE" "Terraform resources and configuration preserved"
-    log "$YELLOW" "To restart: ./chaos-daemon.sh start"
-    log "$YELLOW" "For full cleanup: ./full-cleanup.sh"
+    log "$YELLOW" "To restart: ./scripts/chaos-daemon.sh start"
+    log "$YELLOW" "For full cleanup: ./scripts/full-cleanup.sh"
 }
 
 main "$@"

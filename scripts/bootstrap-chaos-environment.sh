@@ -1016,7 +1016,7 @@ main() {
     echo ""
     echo "Next steps:"
     echo "  1. Review the setup log: ${BOOTSTRAP_LOG}"
-    echo "  2. Start the chaos testing: ./master-chaos.sh"
+    echo "  2. Start the chaos testing: ./scripts/master-chaos.sh"
     echo "  3. Check status anytime: ./scripts/status-check.sh"
     echo ""
     echo "The environment is ready for long-term chaos testing!"

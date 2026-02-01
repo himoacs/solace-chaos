@@ -15,7 +15,7 @@ Three different cleanup scripts for different scenarios:
 
 ## 🚀 Quick Cleanup
 ```bash
-./quick-cleanup.sh
+./scripts/quick-cleanup.sh
 ```
 **What it does:**
 - ✅ Stops all chaos processes (via daemon)  
@@ -29,7 +29,7 @@ Three different cleanup scripts for different scenarios:
 
 ## 🔧 Full Cleanup (Interactive)
 ```bash
-./full-cleanup.sh
+./scripts/full-cleanup.sh
 ```
 **What it does:**
 - ✅ Stops all chaos processes
@@ -74,22 +74,22 @@ Three different cleanup scripts for different scenarios:
 
 ### Quick Restart
 ```bash
-./quick-cleanup.sh
-./chaos-daemon.sh start
+./scripts/quick-cleanup.sh
+./scripts/chaos-daemon.sh start
 ```
 
 ### Complete Environment Reset
 ```bash
-./full-cleanup.sh
+./scripts/full-cleanup.sh
 # Follow prompts for what you want to clean
-./bootstrap-chaos-environment.sh  # If you cleaned everything
+./scripts/bootstrap-chaos-environment.sh  # If you cleaned everything
 ```
 
 ### Infrastructure Reset Only
 ```bash
-./terraform-cleanup.sh
+./scripts/terraform-cleanup.sh
 cd terraform/environments/base && terraform apply
-./chaos-daemon.sh restart
+./scripts/chaos-daemon.sh restart
 ```
 
 ### Partial Reset (Keep Processes Running)
