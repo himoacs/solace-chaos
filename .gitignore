@@ -1,0 +1,36 @@
+# Environment and Secrets
+.env
+*.pem
+*.key
+credentials.json
+secrets/
+
+# Logs and Runtime Files
+logs/
+*.log
+*.pid
+
+# Terraform Files
+terraform.tfstate*
+terraform.tfvars
+.terraform/
+.terraform.lock.hcl
+tfplan
+*.tfplan
+*.backup
+
+# Downloaded Tools and Backups
+sdkperf-tools/
+terraform-backups/
+
+# IDE and OS Files
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Temporary Files
+*.tmp
+*.bak
