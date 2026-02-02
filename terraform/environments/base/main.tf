@@ -186,6 +186,18 @@ resource "solacebroker_msg_vpn_client_profile" "bridge_client_profile_trading" {
   depends_on = [solacebroker_msg_vpn.vpns, solacebroker_msg_vpn_acl_profile.acl_profiles]
 }
 
+# Create client profile for guaranteed messaging in trading VPN
+resource "solacebroker_msg_vpn_client_profile" "guaranteed_messaging_profile" {
+  msg_vpn_name                    = "trading-vpn"
+  client_profile_name             = "guaranteed_messaging"
+  allow_bridge_connections_enabled = false
+  allow_guaranteed_endpoint_create_enabled = true
+  allow_guaranteed_msg_receive_enabled = true
+  allow_guaranteed_msg_send_enabled = true
+  
+  depends_on = [solacebroker_msg_vpn.vpns, solacebroker_msg_vpn_acl_profile.acl_profiles]
+}
+
 # Create client usernames
 resource "solacebroker_msg_vpn_client_username" "users" {
   for_each = var.vpn_users
@@ -194,10 +206,10 @@ resource "solacebroker_msg_vpn_client_username" "users" {
   client_username       = each.value.username
   password              = each.value.password
   acl_profile_name      = each.value.acl_profile
-  client_profile_name   = contains(["bridge_user", "bridge_user_default"], each.key) ? "bridge_client_profile" : "default"
+  client_profile_name   = contains(["bridge_user", "bridge_user_default"], each.key) ? "bridge_client_profile" : (each.key == "order_router" ? "guaranteed_messaging" : "default")
   enabled               = true
 
-  depends_on = [solacebroker_msg_vpn_acl_profile.acl_profiles, solacebroker_msg_vpn_client_profile.bridge_client_profile, solacebroker_msg_vpn_client_profile.bridge_client_profile_trading]
+  depends_on = [solacebroker_msg_vpn_acl_profile.acl_profiles, solacebroker_msg_vpn_client_profile.bridge_client_profile, solacebroker_msg_vpn_client_profile.bridge_client_profile_trading, solacebroker_msg_vpn_client_profile.guaranteed_messaging_profile]
 }
 
 # Cross-VPN Bridge Configuration (conditional)
