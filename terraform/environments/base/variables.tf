@@ -50,6 +50,19 @@ variable "enable_cross_vpn_bridge" {
   default     = false
 }
 
+variable "bridge_username" {
+  description = "Username for cross-VPN bridge authentication"
+  type        = string
+  default     = "admin"
+}
+
+variable "bridge_password" {
+  description = "Password for cross-VPN bridge authentication"
+  type        = string
+  sensitive   = true
+  default     = "admin"
+}
+
 variable "bridges" {
   description = "Bridge configuration"
   type = map(object({
