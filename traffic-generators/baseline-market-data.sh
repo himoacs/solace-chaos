@@ -21,7 +21,7 @@ while true; do
         -ptl="market-data/baseline/heartbeat" \
         -mr="${CURRENT_RATE}" \
         -mn=3600 \
-        -msa=256 2>&1 | tee -a logs/baseline-market.log
+        -msa=256 >> logs/baseline-market.log 2>&1
         
     echo "$(date): Baseline market data cycle completed - restarting in 30 seconds"
     sleep 30

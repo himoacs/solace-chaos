@@ -10,7 +10,7 @@ while true; do
         -cu="${MARKET_DATA_FEED_USER}" \
         -cp="${MARKET_DATA_FEED_PASSWORD}" \
         -ptl="market-data/bridge-stress/equities/NYSE/AAPL/L1" \
-        -mr=5000 -mn=50000 -msa=2048 2>&1 | tee -a logs/bridge-killer.log &
+        -mr=5000 -mn=50000 -msa=2048 >> logs/bridge-killer.log 2>&1 &
     
     PUB_PID=$!
     
@@ -22,7 +22,7 @@ while true; do
             -cp="${RISK_CALCULATOR_PASSWORD}" \
             -stl="market-data/bridge-stress/equities/NYSE/AAPL/L1" \
             -sql=cross-market-data-queue \
-            -pe -md 2>&1 | tee -a logs/bridge-killer.log &
+            -pe -md >> logs/bridge-killer.log 2>&1 &
     done
     
     # Let it run for 10 minutes then kill

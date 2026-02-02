@@ -22,7 +22,7 @@ while true; do
         -mt=persistent \
         -mr="${CURRENT_RATE}" \
         -mn=3600 \
-        -msa=512 2>&1 | tee -a logs/baseline-trade.log
+        -msa=512 >> logs/baseline-trade.log 2>&1
         
     echo "$(date): Baseline trade flow cycle completed - restarting in 30 seconds"
     sleep 30

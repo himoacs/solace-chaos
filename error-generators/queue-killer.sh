@@ -12,7 +12,7 @@ while true; do
         -mt=persistent \
         -mr=1000 \
         -mn=100000 \
-        -msa=5000 2>&1 | tee -a logs/queue-killer.log
+        -msa=5000 >> logs/queue-killer.log 2>&1
         
     echo "$(date): Queue killer stopped (queue probably full!) - waiting 120 seconds"
     sleep 120
