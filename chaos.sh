@@ -15,6 +15,8 @@ case "$1" in
     "stop"|"kill")
         # Kill all chaos testing processes
         echo "🛑 Stopping all chaos testing processes..."
+        
+        # Kill shell scripts first
         pkill -f "baseline-market-data.sh" 2>/dev/null
         pkill -f "baseline-trade-flow.sh" 2>/dev/null
         pkill -f "master-chaos.sh" 2>/dev/null
@@ -22,6 +24,15 @@ case "$1" in
         pkill -f "multi-vpn-acl-violator.sh" 2>/dev/null
         pkill -f "market-data-connection-bomber.sh" 2>/dev/null
         pkill -f "cross-vpn-bridge-killer.sh" 2>/dev/null
+        
+        # Kill underlying Java SDKPerf processes
+        pkill -f "SDKPerf_java" 2>/dev/null
+        pkill -f "sdkperf_java.sh" 2>/dev/null
+        
+        # Wait a moment then force kill any remaining
+        sleep 2
+        pkill -9 -f "SDKPerf_java" 2>/dev/null
+        pkill -9 -f "sdkperf_java.sh" 2>/dev/null
         
         # Clean up PID files
         rm -f scripts/logs/*.pid 2>/dev/null
@@ -40,6 +51,10 @@ case "$1" in
         ;;
     "terraform-cleanup"|"tf-clean")
         exec "$SCRIPT_DIR/scripts/terraform-cleanup.sh" "${@:2}"
+        ;;
+    "nuclear"|"nuke"|"kill-all")
+        echo "☢️  Nuclear cleanup - killing ALL SDKPerf processes..."
+        exec "$SCRIPT_DIR/scripts/kill-all-sdkperf.sh" "${@:2}"
         ;;
     "status"|"check")
         exec "$SCRIPT_DIR/scripts/status-check.sh" "${@:2}"
