@@ -2,6 +2,10 @@
 
 # Master bootstrap script - sets up entire environment with one command
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Change to project root to ensure correct directory structure
+cd "$PROJECT_ROOT"
 
 # Colors for output
 RED='\033[0;31m'
@@ -11,8 +15,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Create logs directory first
-mkdir -p logs
-BOOTSTRAP_LOG="${SCRIPT_DIR}/logs/bootstrap-$(date +%Y%m%d_%H%M%S).log"
+mkdir -p scripts/logs
+BOOTSTRAP_LOG="$PROJECT_ROOT/scripts/logs/bootstrap-$(date +%Y%m%d_%H%M%S).log"
 
 # Logging functions
 log_step() {
@@ -151,8 +155,7 @@ setup_project_structure() {
     
     # Create all necessary directories
     local directories=(
-        "logs"
-        "scripts"
+        "scripts/logs"
         "traffic-generators"
         "error-generators"
         "terraform/environments/base"
@@ -283,7 +286,7 @@ solace_broker_url = "${SOLACE_SEMP_URL}"
 solace_admin_user = "${SOLACE_ADMIN_USER}"
 solace_admin_password = "${SOLACE_ADMIN_PASSWORD}"
 
-# VPN Configuration
+# VPN Configuration (2-VPN Standard Edition)
 vpns = {
   "market_data" = {
     name = "${MARKET_DATA_VPN}"
@@ -294,11 +297,6 @@ vpns = {
     name = "${TRADING_VPN}"
     max_connections = 100
     max_subscriptions = 5000
-  }
-  "integration" = {
-    name = "${INTEGRATION_VPN}"
-    max_connections = 25
-    max_subscriptions = 2000
   }
 }
 
@@ -325,12 +323,12 @@ queues = {
     topic_subscriptions = ["trading/baseline/>"]
   }
   "cross_market_data_queue" = {
-    vpn = "${INTEGRATION_VPN}"
+    vpn = "${MARKET_DATA_VPN}"
     quota = 4
     topic_subscriptions = ["market-data/bridge-stress/>"]
   }
   "risk_calculation_queue" = {
-    vpn = "${INTEGRATION_VPN}"
+    vpn = "${MARKET_DATA_VPN}"
     quota = 5
     topic_subscriptions = ["trading/risk/>"]
   }
@@ -375,13 +373,13 @@ vpn_users = {
     acl_profile = "restricted_trade_access"
   }
   "risk_calculator" = {
-    vpn = "${INTEGRATION_VPN}"
+    vpn = "${MARKET_DATA_VPN}"
     username = "$(echo ${RISK_CALCULATOR_USER} | cut -d'@' -f1)"
     password = "${RISK_CALCULATOR_PASSWORD}"
     acl_profile = "risk_management"
   }
   "integration_user" = {
-    vpn = "${INTEGRATION_VPN}"
+    vpn = "${MARKET_DATA_VPN}"
     username = "$(echo ${INTEGRATION_USER} | cut -d'@' -f1)"
     password = "${INTEGRATION_PASSWORD}"
     acl_profile = "integration_service"
@@ -390,13 +388,9 @@ vpn_users = {
 
 # Bridge Configuration
 enable_cross_vpn_bridge = ${ENABLE_CROSS_VPN_BRIDGE}
-bridges = {
-  "market_to_integration" = {
-    source_vpn = "${MARKET_DATA_VPN}"
-    target_vpn = "${INTEGRATION_VPN}"
-    topics = ["market-data/bridge-stress/>"]
-  }
-}
+bridge_username = "admin"
+bridge_password = "admin"
+bridges = {}
 EOF
     
     log_success "Terraform variables generated"
@@ -695,11 +689,15 @@ EOF
 
 # Function to create master orchestrator
 create_master_orchestrator() {
-    cat > master-chaos.sh <<'EOF'
+    cat > scripts/master-chaos.sh <<'EOF'
 #!/bin/bash
 
 # Master chaos orchestrator - runs all components with health monitoring
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Change to project root for consistent paths
+cd "$PROJECT_ROOT"
 
 # Load environment variables
 source scripts/load-env.sh
@@ -711,7 +709,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-MASTER_LOG="logs/master-chaos-$(date +%Y%m%d_%H%M%S).log"
+MASTER_LOG="scripts/logs/master-chaos-$(date +%Y%m%d_%H%M%S).log"
 HEALTH_CHECK_INTERVAL=300  # 5 minutes
 
 # Components to manage

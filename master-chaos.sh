@@ -2,10 +2,6 @@
 
 # Master chaos orchestrator - runs all components with health monitoring
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-# Change to project root for consistent paths
-cd "$PROJECT_ROOT"
 
 # Load environment variables
 source scripts/load-env.sh
@@ -17,7 +13,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-MASTER_LOG="scripts/logs/master-chaos-$(date +%Y%m%d_%H%M%S).log"
+MASTER_LOG="logs/master-chaos-$(date +%Y%m%d_%H%M%S).log"
 HEALTH_CHECK_INTERVAL=300  # 5 minutes
 
 # Components to manage
@@ -33,10 +29,9 @@ ERROR_GENERATORS=(
     "error-generators/cross-vpn-bridge-killer.sh"
 )
 
-# Component management - bash 3.2 compatible
-COMPONENT_PIDS=""
-COMPONENT_START_TIMES=""
-COMPONENT_NAMES=""
+# Component management
+declare -A COMPONENT_PIDS
+declare -A COMPONENT_START_TIMES
 
 log_message() {
     local message="$1"
@@ -63,45 +58,11 @@ log_error() {
     echo "ERROR: ${message}" >> "$MASTER_LOG"
 }
 
-# Helper functions for bash 3.2 compatibility
-get_component_pid() {
-    local component="$1"
-    echo "$COMPONENT_PIDS" | grep "^$component:" | cut -d: -f2
-}
-
-set_component_pid() {
-    local component="$1"
-    local pid="$2"
-    # Remove existing entry if any
-    COMPONENT_PIDS=$(echo "$COMPONENT_PIDS" | grep -v "^$component:")
-    # Add new entry
-    COMPONENT_PIDS="$COMPONENT_PIDS"$'\n'"$component:$pid"
-}
-
-get_component_start_time() {
-    local component="$1"
-    echo "$COMPONENT_START_TIMES" | grep "^$component:" | cut -d: -f2
-}
-
-set_component_start_time() {
-    local component="$1"
-    local start_time="$2"
-    # Remove existing entry if any
-    COMPONENT_START_TIMES=$(echo "$COMPONENT_START_TIMES" | grep -v "^$component:")
-    # Add new entry
-    COMPONENT_START_TIMES="$COMPONENT_START_TIMES"$'\n'"$component:$start_time"
-}
-
-get_all_components() {
-    echo "$COMPONENT_PIDS" | grep -v "^$" | cut -d: -f1
-}
-
 start_component() {
     local component="$1"
     local component_name=$(basename "$component" .sh)
-    local existing_pid=$(get_component_pid "$component")
     
-    if [[ -n "$existing_pid" ]] && kill -0 "$existing_pid" 2>/dev/null; then
+    if [[ -n "${COMPONENT_PIDS[$component]}" ]] && kill -0 "${COMPONENT_PIDS[$component]}" 2>/dev/null; then
         return 0
     fi
     
@@ -109,8 +70,8 @@ start_component() {
     
     "./$component" &
     local pid=$!
-    set_component_pid "$component" "$pid"
-    set_component_start_time "$component" "$(date +%s)"
+    COMPONENT_PIDS[$component]=$pid
+    COMPONENT_START_TIMES[$component]=$(date +%s)
     
     log_success "Started $component_name (PID: $pid)"
 }
@@ -118,7 +79,7 @@ start_component() {
 check_component_health() {
     local component="$1"
     local component_name=$(basename "$component" .sh)
-    local pid=$(get_component_pid "$component")
+    local pid="${COMPONENT_PIDS[$component]}"
     
     if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
         log_warning "Component $component_name is not running - restarting"
@@ -133,8 +94,8 @@ cleanup_and_exit() {
     local signal=$1
     log_message "Received signal $signal - shutting down gracefully"
     
-    for component in $(get_all_components); do
-        local pid=$(get_component_pid "$component")
+    for component in "${!COMPONENT_PIDS[@]}"; do
+        local pid="${COMPONENT_PIDS[$component]}"
         local component_name=$(basename "$component" .sh)
         
         if kill -0 "$pid" 2>/dev/null; then
@@ -189,8 +150,7 @@ main_orchestrator_loop() {
         
         # Heartbeat every hour
         if (( loop_counter % 120 == 0 )); then
-            local component_count=$(get_all_components | wc -l | tr -d ' ')
-            log_message "Orchestrator heartbeat - loop $loop_counter, components: $component_count managed"
+            log_message "Orchestrator heartbeat - loop $loop_counter, components: ${#COMPONENT_PIDS[@]} managed"
         fi
         
         sleep 30

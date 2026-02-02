@@ -5,7 +5,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TERRAFORM_DIR="${SCRIPT_DIR}/terraform/environments/base"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+TERRAFORM_DIR="${PROJECT_ROOT}/terraform/environments/base"
 LOG_FILE="${SCRIPT_DIR}/logs/terraform-cleanup.log"
 
 # Colors for output

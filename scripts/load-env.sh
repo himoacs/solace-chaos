@@ -1,10 +1,7 @@
 #!/bin/bash
 
 # Load environment variables from .env file
-# Get the absolute path to the project root
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-ENV_FILE="$PROJECT_ROOT/.env"
+ENV_FILE="$(dirname $0)/../.env"
 
 if [ -f "$ENV_FILE" ]; then
     export $(cat "$ENV_FILE" | grep -v '^#' | xargs)
