@@ -14,15 +14,24 @@ while true; do
     
     PUB_PID=$!
     
-    # Multiple consumers on default VPN (simplified - no bridge needed)
-    for i in {1..5}; do
+    # Queue consumers on default VPN
+    for i in {1..3}; do
         bash "${SDKPERF_SCRIPT_PATH}" \
             -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
             -cu="${RISK_CALCULATOR_USER}" \
             -cp="${RISK_CALCULATOR_PASSWORD}" \
-            -stl="market-data/bridge-stress/equities/NYSE/AAPL/L1" \
-            -sql=cross-market-data-queue \
-            -pe -md >> logs/bridge-killer.log 2>&1 &
+            -sql=cross_market_data_queue \
+            -pe >> logs/bridge-killer.log 2>&1 &
+    done
+    
+    # Cross-VPN bridge consumers on trading-vpn (actual bridge testing)
+    for i in {1..2}; do
+        bash "${SDKPERF_SCRIPT_PATH}" \
+            -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+            -cu="${ORDER_ROUTER_USER}" \
+            -cp="${ORDER_ROUTER_PASSWORD}" \
+            -sql=bridge_receive_queue \
+            -pe >> logs/bridge-killer.log 2>&1 &
     done
     
     # Let it run for 10 minutes then kill
