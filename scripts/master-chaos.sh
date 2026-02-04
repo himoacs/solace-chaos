@@ -18,8 +18,8 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 MASTER_LOG="scripts/logs/master-chaos-$(date +%Y%m%d_%H%M%S).log"
-HEALTH_CHECK_INTERVAL=300  # 5 minutes
-CONSUMER_CLEANUP_FREQUENCY=10  # Every 10 health checks (~5 minutes)
+HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-300}  # 5 minutes (configurable via .env)
+CONSUMER_CLEANUP_FREQUENCY=${CONSUMER_CLEANUP_FREQUENCY:-10}  # Every 10 health checks (~5 minutes)
 
 # Components to manage
 TRAFFIC_GENERATORS=(
