@@ -42,7 +42,7 @@ while true; do
         sleep 60
     fi
     
-    # Start persistent publisher in background to fill queue
+    # Start persistent publisher in background to fill queue (very high rate to overcome active consumers)
     echo "$(date): Starting persistent publisher to fill queue to ${FULL_THRESHOLD}%..."
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
@@ -50,7 +50,7 @@ while true; do
         -cp="${CHAOS_GENERATOR_PASSWORD}" \
         -ptl="trading/orders/equities/NYSE/new" \
         -mt=persistent \
-        -mr=1500 \
+        -mr=10000 \
         -mn=500000 \
         -msa=5000 >> logs/queue-killer.log 2>&1 &
     
