@@ -48,9 +48,9 @@ echo "$(date): Starting consumer cleanup..."
 cleanup_queue_consumers "equity_order_queue" 1
 cleanup_queue_consumers "baseline_queue" 1 
 cleanup_queue_consumers "bridge_receive_queue" 1
-cleanup_queue_consumers "cross_market_data_queue" 1
-cleanup_queue_consumers "risk_calculation_queue" 1
-# Unused queues removed: options_order_queue, settlement_queue
+cleanup_queue_consumers "cross_market_data_queue" 0
+# Unused queues removed: options_order_queue, settlement_queue, risk_calculation_queue
+# Note: cross_market_data_queue should only have bridge client (not SDKPerf consumers)
 
 echo "$(date): Consumer cleanup complete"
 

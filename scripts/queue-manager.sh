@@ -31,7 +31,6 @@ show_queue_status() {
         "baseline_queue:trading-vpn"
         "bridge_receive_queue:trading-vpn"
         "cross_market_data_queue:default"
-        "risk_calculation_queue:default"
     )
     
     for queue_vpn in "${queues[@]}"; do
@@ -76,7 +75,6 @@ clear_all_queues() {
         "baseline_queue:trading-vpn"
         "bridge_receive_queue:trading-vpn"
         "cross_market_data_queue:default"
-        "risk_calculation_queue:default"
     )
     
     for queue_vpn in "${queues[@]}"; do
@@ -99,7 +97,6 @@ drain_all_queues() {
     drain_queue_manually "baseline_queue" "trading-vpn" "consumer" &
     drain_queue_manually "bridge_receive_queue" "trading-vpn" "consumer" &
     drain_queue_manually "cross_market_data_queue" "default" "consumer" &
-    drain_queue_manually "risk_calculation_queue" "default" "consumer" &
     
     echo "Waiting for all drain operations to complete..."
     wait

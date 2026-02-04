@@ -54,7 +54,7 @@ That's it! The system will run continuously generating various error conditions 
 ### Queue Configuration
 - **5 Active Queues**: Complete multi-VPN queue architecture for comprehensive testing
   - **trading-vpn**: `equity_order_queue`, `baseline_queue`, `bridge_receive_queue` 
-  - **default**: `cross_market_data_queue`, `risk_calculation_queue`
+  - **default**: `cross_market_data_queue`
 - **Exclusive Access**: Prevents zombie consumers and ensures single consumer per queue
 - **Optimized Quotas**: 80-150MB quotas designed for realistic backlog testing
 - **Non-Persistent Messages**: Optimized for high throughput (8k+ msg/sec)

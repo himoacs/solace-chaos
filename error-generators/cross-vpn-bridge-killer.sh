@@ -29,25 +29,17 @@ while true; do
     
     PUB_PID=$!
     
-    # Queue consumers on default VPN
-    for i in {1..3}; do
-        bash "${SDKPERF_SCRIPT_PATH}" \
-            -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-            -cu="${RISK_CALCULATOR_USER}" \
-            -cp="${RISK_CALCULATOR_PASSWORD}" \
-            -sql=cross_market_data_queue \
-            -pe >> logs/bridge-killer.log 2>&1 &
-    done
+    # Bridge client will consume from cross_market_data_queue automatically
+    # No need for additional SDKPerf consumers
     
     # Cross-VPN bridge consumers on trading-vpn (actual bridge testing)
-    for i in {1..2}; do
-        bash "${SDKPERF_SCRIPT_PATH}" \
-            -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-            -cu="${ORDER_ROUTER_USER}" \
-            -cp="${ORDER_ROUTER_PASSWORD}" \
-            -sql=bridge_receive_queue \
-            -pe >> logs/bridge-killer.log 2>&1 &
-    done
+    # Start single drain consumer for exclusive queue
+    bash "${SDKPERF_SCRIPT_PATH}" \
+        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+        -cu="${ORDER_ROUTER_USER}" \
+        -cp="${ORDER_ROUTER_PASSWORD}" \
+        -sql=bridge_receive_queue \
+        -pe >> logs/bridge-killer.log 2>&1 &
     
     # Let it run for 10 minutes then kill
     sleep 600

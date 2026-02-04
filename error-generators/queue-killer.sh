@@ -23,9 +23,9 @@ while true; do
                 -cu="${ORDER_ROUTER_USER}" \
                 -cp="${ORDER_ROUTER_PASSWORD}" \
                 -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
-            DRAIN_PIDS="$! $DRAIN_PIDS"
+        DRAIN_PIDS="$!"
         
-        echo "$(date): 🔄 Started 2 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
+        echo "$(date): 🔄 Started 1 drain consumer, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
         wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}" 300
         
         # Stop all drain consumers
@@ -74,9 +74,9 @@ while true; do
                     -cu="${ORDER_ROUTER_USER}" \
                     -cp="${ORDER_ROUTER_PASSWORD}" \
                     -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
-                DRAIN_PIDS="$! $DRAIN_PIDS"
-            
-            echo "$(date): 🔄 Started 2 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
+            DRAIN_PIDS="$!"
+        
+        echo "$(date): 🔄 Started 1 drain consumer, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
             # Wait for queue to drain to threshold
             wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}" 300
             
@@ -101,14 +101,12 @@ while true; do
             
             if [ "$usage" -gt 10 ]; then
                 echo "$(date): Cleaning up ${usage}% partial fill..."
-                for i in {1..2}; do
-                    bash "${SDKPERF_SCRIPT_PATH}" \
-                        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-                        -cu="${ORDER_ROUTER_USER}" \
-                        -cp="${ORDER_ROUTER_PASSWORD}" \
-                        -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
-                    DRAIN_PIDS="$! $DRAIN_PIDS"
-                done
+                bash "${SDKPERF_SCRIPT_PATH}" \
+                    -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+                    -cu="${ORDER_ROUTER_USER}" \
+                    -cp="${ORDER_ROUTER_PASSWORD}" \
+                    -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
+                DRAIN_PIDS="$!"
                 
                 wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" 5 60
                 

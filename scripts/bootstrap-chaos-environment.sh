@@ -342,11 +342,6 @@ queues = {
     quota = 150
     topic_subscriptions = ["market-data/bridge-stress/>"]
   }
-  "risk_calculation_queue" = {
-    vpn = "${MARKET_DATA_VPN}"
-    quota = 100
-    topic_subscriptions = ["trading/risk/>"]
-  }
 }
 
 # User Configuration by VPN
@@ -386,12 +381,6 @@ vpn_users = {
     username = "$(echo ${RESTRICTED_TRADE_USER} | cut -d'@' -f1)"
     password = "${RESTRICTED_TRADE_PASSWORD}"
     acl_profile = "restricted_trade_access"
-  }
-  "risk_calculator" = {
-    vpn = "${MARKET_DATA_VPN}"
-    username = "$(echo ${RISK_CALCULATOR_USER} | cut -d'@' -f1)"
-    password = "${RISK_CALCULATOR_PASSWORD}"
-    acl_profile = "risk_management"
   }
   "integration_user" = {
     vpn = "${MARKET_DATA_VPN}"
@@ -655,10 +644,9 @@ while true; do
                 -cu="${ORDER_ROUTER_USER}" \
                 -cp="${ORDER_ROUTER_PASSWORD}" \
                 -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
-            DRAIN_PIDS="$! $DRAIN_PIDS"
-        done
+        DRAIN_PIDS="$!"
         
-        echo "$(date): 🔄 Started 2 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
+        echo "$(date): 🔄 Started 1 drain consumer, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
         wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}" 300
         
         # Stop all drain consumers
@@ -735,14 +723,12 @@ while true; do
             
             if [ "$usage" -gt 10 ]; then
                 echo "$(date): Cleaning up ${usage}% partial fill..."
-                for i in {1..2}; do
-                    bash "${SDKPERF_SCRIPT_PATH}" \
-                        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-                        -cu="${ORDER_ROUTER_USER}" \
-                        -cp="${ORDER_ROUTER_PASSWORD}" \
-                        -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
-                    DRAIN_PIDS="$! $DRAIN_PIDS"
-                done
+                bash "${SDKPERF_SCRIPT_PATH}" \
+                    -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+                    -cu="${ORDER_ROUTER_USER}" \
+                    -cp="${ORDER_ROUTER_PASSWORD}" \
+                    -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
+                DRAIN_PIDS="$!"
                 
                 wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" 5 60
                 
@@ -878,15 +864,8 @@ while true; do
     
     PUB_PID=$!
     
-    # Queue consumers on default VPN
-    for i in {1..3}; do
-        bash "${SDKPERF_SCRIPT_PATH}" \
-            -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-            -cu="${RISK_CALCULATOR_USER}" \
-            -cp="${RISK_CALCULATOR_PASSWORD}" \
-            -sql=cross_market_data_queue \
-            -pe >> logs/bridge-killer.log 2>&1 &
-    done
+    # Bridge client will consume from cross_market_data_queue automatically
+    # No need for additional SDKPerf consumers
     
     # Cross-VPN bridge consumers on trading-vpn (actual bridge testing)
     for i in {1..2}; do
