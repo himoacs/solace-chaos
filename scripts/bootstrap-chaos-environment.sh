@@ -18,6 +18,26 @@ NC='\033[0m' # No Color
 mkdir -p scripts/logs
 BOOTSTRAP_LOG="$PROJECT_ROOT/scripts/logs/bootstrap-$(date +%Y%m%d_%H%M%S).log"
 
+# Function to clean up old log files (older than 24 hours)
+cleanup_old_logs() {
+    echo "$(date): 🧹 Cleaning up log files older than 24 hours..." | tee -a "$BOOTSTRAP_LOG"
+    
+    # Clean main logs directory (files older than 1440 minutes = 24 hours)
+    local cleaned=0
+    cleaned=$(find "logs" -name "*.log" -type f -mmin +1440 -print -exec rm -f {} \; 2>/dev/null | wc -l)
+    
+    # Clean scripts/logs directory  
+    local scripts_cleaned=0
+    scripts_cleaned=$(find "scripts/logs" -name "*.log" -type f -mmin +1440 -print -exec rm -f {} \; 2>/dev/null | wc -l)
+    scripts_cleaned=$((scripts_cleaned + $(find "scripts/logs" -name "*.start" -type f -mmin +1440 -print -exec rm -f {} \; 2>/dev/null | wc -l)))
+    
+    # Clean old log backups (older than 7 days)
+    local backups_cleaned=0
+    backups_cleaned=$(find "scripts/log-backups" -type d -mtime +7 -print -exec rm -rf {} \; 2>/dev/null | wc -l)
+    
+    echo "$(date): ✅ Bootstrap log cleanup completed: $cleaned main logs, $scripts_cleaned script logs, $backups_cleaned old backups" | tee -a "$BOOTSTRAP_LOG"
+}
+
 # Logging functions
 log_step() {
     local message="$1"
@@ -586,14 +606,14 @@ while true; do
     # Add queue consumers for automatic draining (prevents permanent queue buildup)
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-        -cu="${RISK_CALCULATOR_USER}" \
-        -cp="${RISK_CALCULATOR_PASSWORD}" \
+        -cu="${ORDER_ROUTER_USER}" \
+        -cp="${ORDER_ROUTER_PASSWORD}" \
         -sql="equity_order_queue" >> logs/baseline-trade.log 2>&1 &
     
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-        -cu="${SETTLEMENT_PROCESSOR_USER}" \
-        -cp="${SETTLEMENT_PROCESSOR_PASSWORD}" \
+        -cu="${ORDER_ROUTER_USER}" \
+        -cp="${ORDER_ROUTER_PASSWORD}" \
         -sql="baseline_queue" >> logs/baseline-trade.log 2>&1 &
         
     # Let it run for 1 hour then restart for rate adjustments
@@ -630,8 +650,30 @@ while true; do
     
     # Check if queue is already full
     if check_queue_full "${TARGET_QUEUE}" "${TARGET_VPN}" "${FULL_THRESHOLD}"; then
-        echo "$(date): Queue ${TARGET_QUEUE} already full - waiting for drain first"
-        wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}"
+        echo "$(date): 🚨 Queue ${TARGET_QUEUE} already at ${FULL_THRESHOLD}%! Starting drain consumers immediately..."
+        
+        # Start 2 fast drain consumers - non-exclusive queues support multiple consumers efficiently
+        for i in {1..2}; do
+            bash "${SDKPERF_SCRIPT_PATH}" \
+                -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+                -cu="${ORDER_ROUTER_USER}" \
+                -cp="${ORDER_ROUTER_PASSWORD}" \
+                -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
+            DRAIN_PIDS="$! $DRAIN_PIDS"
+        done
+        
+        echo "$(date): 🔄 Started 2 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
+        wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}" 300
+        
+        # Stop all drain consumers
+        if [ -n "$DRAIN_PIDS" ]; then
+            echo "$(date): ✅ Queue drained! Stopping all drain consumers..."
+            kill $DRAIN_PIDS 2>/dev/null
+            wait_for_pids_to_exit $DRAIN_PIDS
+        fi
+        
+        echo "$(date): 💤 Queue drained, waiting 60 seconds before starting fill cycle..."
+        sleep 60
     fi
     
     # Start persistent publisher in background to fill queue
@@ -663,17 +705,17 @@ while true; do
             # Stop the publisher first
             kill ${PUBLISHER_PID} 2>/dev/null
             
-            # Start multiple fast drain consumers
-            for i in {1..5}; do
+            # Start 2 fast drain consumers - non-exclusive queues support multiple consumers efficiently
+            for i in {1..2}; do
                 bash "${SDKPERF_SCRIPT_PATH}" \
                     -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-                    -cu="${RISK_CALCULATOR_USER}" \
-                    -cp="${RISK_CALCULATOR_PASSWORD}" \
+                    -cu="${ORDER_ROUTER_USER}" \
+                    -cp="${ORDER_ROUTER_PASSWORD}" \
                     -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
                 DRAIN_PIDS="$! $DRAIN_PIDS"
             done
             
-            echo "$(date): 🔄 Started 5 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
+            echo "$(date): 🔄 Started 2 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
             # Wait for queue to drain to threshold
             wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}" 300
             
@@ -701,8 +743,8 @@ while true; do
                 for i in {1..2}; do
                     bash "${SDKPERF_SCRIPT_PATH}" \
                         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-                        -cu="${RISK_CALCULATOR_USER}" \
-                        -cp="${RISK_CALCULATOR_PASSWORD}" \
+                        -cu="${ORDER_ROUTER_USER}" \
+                        -cp="${ORDER_ROUTER_PASSWORD}" \
                         -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
                     DRAIN_PIDS="$! $DRAIN_PIDS"
                 done
@@ -1147,30 +1189,30 @@ get_queue_usage() {
         return 1
     fi
     
-    # Query SEMP API for queue usage
+    # Query SEMP API for queue usage using collections.msgs.count
     local response=$(curl -s -u "${SOLACE_ADMIN_USER}:${SOLACE_ADMIN_PASSWORD}" \
         "${SOLACE_SEMP_URL}/SEMP/v2/monitor/msgVpns/${vpn_name}/queues/${queue_name}" 2>/dev/null)
     
     if [ $? -eq 0 ] && [ ! -z "$response" ]; then
-        # Try byte quota first
-        local usage=$(echo "$response" | grep -o '"quotaByteUtilizationPercentage":[0-9.]*' | cut -d':' -f2 | head -1)
-        if [ ! -z "$usage" ] && [ "$usage" != "null" ]; then
-            echo "${usage%.*}"  # Convert to integer
-            return 0
-        fi
+        # Get collections.msgs.count (number of available message objects)
+        local msg_count=$(echo "$response" | jq -r '.collections.msgs.count // 0')
         
-        # Try message spool usage percentage
-        usage=$(echo "$response" | grep -o '"msgSpoolUsagePercentage":[0-9.]*' | cut -d':' -f2 | head -1)
-        if [ ! -z "$usage" ] && [ "$usage" != "null" ]; then
-            echo "${usage%.*}"
-            return 0
-        fi
-        
-        # Fall back to message count estimation (assume 100K messages = 85%)
-        local msg_count=$(echo "$response" | grep -o '"spooledMsgCount":[0-9]*' | cut -d':' -f2 | head -1)
         if [ ! -z "$msg_count" ] && [ "$msg_count" != "null" ]; then
+            # Calculate percentage based on reasonable queue capacity (1000 messages = 100%)
+            local usage_percent=$((msg_count * 100 / 1000))
+            # Cap at 100%
+            if [ $usage_percent -gt 100 ]; then
+                usage_percent=100
+            fi
+            echo "$usage_percent"
+            return 0
+        fi
+        
+        # Fall back to spooledMsgCount if collections data not available
+        local spooled_count=$(echo "$response" | grep -o '"spooledMsgCount":[0-9]*' | cut -d':' -f2 | head -1)
+        if [ ! -z "$spooled_count" ] && [ "$spooled_count" != "null" ]; then
             # Estimate percentage: assume full at ~120K messages
-            local estimated_percent=$((msg_count * 100 / 120000))
+            local estimated_percent=$((spooled_count * 100 / 120000))
             # Cap at 100%
             if [ $estimated_percent -gt 100 ]; then
                 estimated_percent=100
@@ -1355,6 +1397,9 @@ main() {
     echo "🚀 Solace Chaos Testing Environment Bootstrap"
     echo "============================================="
     echo ""
+    
+    # Clean up old logs before starting
+    cleanup_old_logs
     
     # Execute all setup steps
     if ! setup_environment_config; then

@@ -40,14 +40,14 @@ while true; do
     # Add queue consumers for automatic draining (prevents permanent queue buildup)
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-        -cu="${RISK_CALCULATOR_USER}" \
-        -cp="${RISK_CALCULATOR_PASSWORD}" \
+        -cu="${ORDER_ROUTER_USER}" \
+        -cp="${ORDER_ROUTER_PASSWORD}" \
         -sql="equity_order_queue" >> logs/baseline-trade.log 2>&1 &
     
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-        -cu="${SETTLEMENT_PROCESSOR_USER}" \
-        -cp="${SETTLEMENT_PROCESSOR_PASSWORD}" \
+        -cu="${ORDER_ROUTER_USER}" \
+        -cp="${ORDER_ROUTER_PASSWORD}" \
         -sql="baseline_queue" >> logs/baseline-trade.log 2>&1 &
         
     # Let it run for 1 hour then restart for rate adjustments

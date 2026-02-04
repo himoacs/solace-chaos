@@ -42,30 +42,30 @@ get_queue_usage() {
         return 1
     fi
     
-    # Query SEMP API for queue usage
+    # Query SEMP API for queue usage using collections.msgs.count
     local response=$(curl -s -u "${SOLACE_ADMIN_USER}:${SOLACE_ADMIN_PASSWORD}" \
         "${SOLACE_SEMP_URL}/SEMP/v2/monitor/msgVpns/${vpn_name}/queues/${queue_name}" 2>/dev/null)
     
     if [ $? -eq 0 ] && [ ! -z "$response" ]; then
-        # Try byte quota first
-        local usage=$(echo "$response" | grep -o '"quotaByteUtilizationPercentage":[0-9.]*' | cut -d':' -f2 | head -1)
-        if [ ! -z "$usage" ] && [ "$usage" != "null" ]; then
-            echo "${usage%.*}"  # Convert to integer
-            return 0
-        fi
+        # Get collections.msgs.count (number of available message objects)
+        local msg_count=$(echo "$response" | jq -r '.collections.msgs.count // 0')
         
-        # Try message spool usage percentage
-        usage=$(echo "$response" | grep -o '"msgSpoolUsagePercentage":[0-9.]*' | cut -d':' -f2 | head -1)
-        if [ ! -z "$usage" ] && [ "$usage" != "null" ]; then
-            echo "${usage%.*}"
-            return 0
-        fi
-        
-        # Fall back to message count estimation (assume 100K messages = 85%)
-        local msg_count=$(echo "$response" | grep -o '"spooledMsgCount":[0-9]*' | cut -d':' -f2 | head -1)
         if [ ! -z "$msg_count" ] && [ "$msg_count" != "null" ]; then
+            # Calculate percentage based on reasonable queue capacity (1000 messages = 100%)
+            local usage_percent=$((msg_count * 100 / 1000))
+            # Cap at 100%
+            if [ $usage_percent -gt 100 ]; then
+                usage_percent=100
+            fi
+            echo "$usage_percent"
+            return 0
+        fi
+        
+        # Fall back to spooledMsgCount if collections data not available
+        local spooled_count=$(echo "$response" | grep -o '"spooledMsgCount":[0-9]*' | cut -d':' -f2 | head -1)
+        if [ ! -z "$spooled_count" ] && [ "$spooled_count" != "null" ]; then
             # Estimate percentage: assume full at ~120K messages
-            local estimated_percent=$((msg_count * 100 / 120000))
+            local estimated_percent=$((spooled_count * 100 / 120000))
             # Cap at 100%
             if [ $estimated_percent -gt 100 ]; then
                 estimated_percent=100

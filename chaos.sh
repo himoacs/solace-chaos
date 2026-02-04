@@ -5,11 +5,30 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Function to clean up old log files (older than 24 hours)
+cleanup_old_logs() {
+    echo "🧹 Cleaning up log files older than 24 hours..."
+    
+    # Clean main logs directory (files older than 1440 minutes = 24 hours)
+    find "$SCRIPT_DIR/logs" -name "*.log" -type f -mmin +1440 -exec rm -f {} \; 2>/dev/null || true
+    
+    # Clean scripts/logs directory
+    find "$SCRIPT_DIR/scripts/logs" -name "*.log" -type f -mmin +1440 -exec rm -f {} \; 2>/dev/null || true
+    find "$SCRIPT_DIR/scripts/logs" -name "*.start" -type f -mmin +1440 -exec rm -f {} \; 2>/dev/null || true
+    
+    # Clean log backups (older than 7 days)
+    find "$SCRIPT_DIR/scripts/log-backups" -type d -mtime +7 -exec rm -rf {} \; 2>/dev/null || true
+    
+    echo "✅ Log cleanup completed"
+}
+
 case "$1" in
     "bootstrap"|"setup"|"init")
         exec "$SCRIPT_DIR/scripts/bootstrap-chaos-environment.sh" "${@:2}"
         ;;
     "start"|"run"|"chaos")
+        # Clean up old logs before starting
+        cleanup_old_logs
         exec "$SCRIPT_DIR/scripts/master-chaos.sh" "${@:2}"
         ;;
     "weekly"|"week")
@@ -47,7 +66,15 @@ case "$1" in
         exec "$SCRIPT_DIR/scripts/chaos-daemon.sh" "${@:2}"
         ;;
     "cleanup"|"clean")
-        exec "$SCRIPT_DIR/scripts/full-cleanup.sh" "${@:2}"
+        case "${2:-all}" in
+            "logs")
+                cleanup_old_logs
+                ;;
+            "all"|*)
+                cleanup_old_logs
+                exec "$SCRIPT_DIR/scripts/full-cleanup.sh" "${@:2}"
+                ;;
+        esac
         ;;
     "quick-cleanup"|"quick")
         exec "$SCRIPT_DIR/scripts/quick-cleanup.sh" "${@:2}"
@@ -68,12 +95,13 @@ case "$1" in
         echo ""
         echo "Available commands:"
         echo "  ./chaos.sh bootstrap    # Initial environment setup"
-        echo "  ./chaos.sh start        # Start chaos testing (runs indefinitely)"
+        echo "  ./chaos.sh start        # Start chaos testing (auto-cleans old logs)"
         echo "  ./chaos.sh weekly       # Start chaos testing with weekly restarts"
         echo "  ./chaos.sh stop         # Stop all chaos testing processes"
         echo "  ./chaos.sh daemon       # Process management daemon"
         echo "  ./chaos.sh status       # Check component status"
-        echo "  ./chaos.sh cleanup      # Full interactive cleanup"
+        echo "  ./chaos.sh cleanup      # Full interactive cleanup + old logs"
+        echo "  ./chaos.sh cleanup logs # Only clean old logs (24h+)"
         echo "  ./chaos.sh quick        # Quick process cleanup"
         echo "  ./chaos.sh tf-clean     # Terraform-only cleanup"
         echo ""

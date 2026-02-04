@@ -38,12 +38,29 @@ show_queue_status() {
         local vpn_name="${queue_vpn##*:}"
         local usage=$(get_queue_usage "$queue_name" "$vpn_name")
         
+        # Get collections message count and spooled byte count
+        local response=$(curl -s -u "${SOLACE_ADMIN_USER}:${SOLACE_ADMIN_PASSWORD}" \
+            "${SOLACE_SEMP_URL}/SEMP/v2/monitor/msgVpns/${vpn_name}/queues/${queue_name}" 2>/dev/null)
+        
+        local collections_count=$(echo "$response" | jq -r '.collections.msgs.count // 0')
+        local spooled_count=$(echo "$response" | grep -o '"spooledMsgCount":[0-9]*' | cut -d':' -f2 | head -1)
+        local spool_bytes=$(echo "$response" | grep -o '"spooledByteCount":[0-9]*' | cut -d':' -f2 | head -1)
+        
+        if [ -z "$collections_count" ]; then collections_count="?"; fi
+        if [ -z "$spooled_count" ]; then spooled_count="?"; fi
+        if [ -z "$spool_bytes" ]; then 
+            spool_bytes="?"
+        else 
+            # Convert bytes to MB for readability
+            spool_bytes="$((spool_bytes / 1024 / 1024))MB"
+        fi
+        
         if [ "$usage" -gt 80 ]; then
-            echo "🔴 $queue_name ($vpn_name): ${usage}% CRITICAL"
+            echo "🔴 $queue_name ($vpn_name): ${usage}% CRITICAL (${collections_count} avail, ${spooled_count} total, ${spool_bytes})"
         elif [ "$usage" -gt 50 ]; then
-            echo "🟡 $queue_name ($vpn_name): ${usage}% WARNING"
+            echo "🟡 $queue_name ($vpn_name): ${usage}% WARNING (${collections_count} avail, ${spooled_count} total, ${spool_bytes})"
         else
-            echo "🟢 $queue_name ($vpn_name): ${usage}% OK"
+            echo "🟢 $queue_name ($vpn_name): ${usage}% OK (${collections_count} avail, ${spooled_count} total, ${spool_bytes})"
         fi
     done
 }

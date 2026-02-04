@@ -7,6 +7,23 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Change to project root
 cd "$PROJECT_ROOT"
 
+# Function to clean up old log files (older than 24 hours)
+cleanup_old_logs() {
+    echo "$(date): 🧹 Cleaning up log files older than 24 hours..."
+    
+    # Clean main logs directory (files older than 1440 minutes = 24 hours)
+    find "logs" -name "*.log" -type f -mmin +1440 -exec rm -f {} \; 2>/dev/null || true
+    
+    # Clean scripts/logs directory
+    find "scripts/logs" -name "*.log" -type f -mmin +1440 -exec rm -f {} \; 2>/dev/null || true
+    find "scripts/logs" -name "*.start" -type f -mmin +1440 -exec rm -f {} \; 2>/dev/null || true
+    
+    # Clean log backups (older than 7 days)
+    find "scripts/log-backups" -type d -mtime +7 -exec rm -rf {} \; 2>/dev/null || true
+    
+    echo "$(date): ✅ Weekly log cleanup completed"
+}
+
 # Colors for output
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -48,6 +65,9 @@ cycle_count=0
 while true; do
     cycle_count=$((cycle_count + 1))
     log_message "Starting chaos testing cycle #${cycle_count}"
+    
+    # Clean up old logs at the start of each cycle
+    cleanup_old_logs
     
     # Start the master chaos orchestrator
     bash scripts/master-chaos.sh

@@ -1,4 +1,5 @@
-#!/bin/bash
+# Queue Killer - Intelligent fill-then-drain chaos testing
+# Tests queue resilience with realistic consumer patterns on non-exclusive queues
 source scripts/load-env.sh
 
 # Target queue configuration
@@ -15,8 +16,30 @@ while true; do
     
     # Check if queue is already full
     if check_queue_full "${TARGET_QUEUE}" "${TARGET_VPN}" "${FULL_THRESHOLD}"; then
-        echo "$(date): Queue ${TARGET_QUEUE} already full - waiting for drain first"
-        wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}"
+        echo "$(date): 🚨 Queue ${TARGET_QUEUE} already at ${FULL_THRESHOLD}%! Starting drain consumers immediately..."
+        
+        # Start multiple fast drain consumers
+        for i in {1..5}; do
+            bash "${SDKPERF_SCRIPT_PATH}" \
+                -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+                -cu="${ORDER_ROUTER_USER}" \
+                -cp="${ORDER_ROUTER_PASSWORD}" \
+                -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
+            DRAIN_PIDS="$! $DRAIN_PIDS"
+        done
+        
+        echo "$(date): 🔄 Started 2 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
+        wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}" 300
+        
+        # Stop all drain consumers
+        if [ -n "$DRAIN_PIDS" ]; then
+            echo "$(date): ✅ Queue drained! Stopping all drain consumers..."
+            kill $DRAIN_PIDS 2>/dev/null
+            wait_for_pids_to_exit $DRAIN_PIDS
+        fi
+        
+        echo "$(date): 💤 Queue drained, waiting 60 seconds before starting fill cycle..."
+        sleep 60
     fi
     
     # Start persistent publisher in background to fill queue
@@ -48,17 +71,17 @@ while true; do
             # Stop the publisher first
             kill ${PUBLISHER_PID} 2>/dev/null
             
-            # Start multiple fast drain consumers
-            for i in {1..5}; do
+            # Start 2 fast drain consumers - non-exclusive queues handle multiple consumers efficiently
+            for i in {1..2}; do
                 bash "${SDKPERF_SCRIPT_PATH}" \
                     -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-                    -cu="${RISK_CALCULATOR_USER}" \
-                    -cp="${RISK_CALCULATOR_PASSWORD}" \
+                    -cu="${ORDER_ROUTER_USER}" \
+                    -cp="${ORDER_ROUTER_PASSWORD}" \
                     -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
                 DRAIN_PIDS="$! $DRAIN_PIDS"
             done
             
-            echo "$(date): 🔄 Started 5 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
+            echo "$(date): 🔄 Started 2 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
             # Wait for queue to drain to threshold
             wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}" 300
             
@@ -86,8 +109,8 @@ while true; do
                 for i in {1..2}; do
                     bash "${SDKPERF_SCRIPT_PATH}" \
                         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-                        -cu="${RISK_CALCULATOR_USER}" \
-                        -cp="${RISK_CALCULATOR_PASSWORD}" \
+                        -cu="${ORDER_ROUTER_USER}" \
+                        -cp="${ORDER_ROUTER_PASSWORD}" \
                         -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
                     DRAIN_PIDS="$! $DRAIN_PIDS"
                 done
