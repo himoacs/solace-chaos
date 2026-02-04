@@ -19,6 +19,7 @@ NC='\033[0m'
 
 MASTER_LOG="scripts/logs/master-chaos-$(date +%Y%m%d_%H%M%S).log"
 HEALTH_CHECK_INTERVAL=300  # 5 minutes
+CONSUMER_CLEANUP_FREQUENCY=10  # Every 10 health checks (~5 minutes)
 
 # Components to manage
 TRAFFIC_GENERATORS=(
@@ -178,6 +179,13 @@ main_orchestrator_loop() {
         # Health check cycle
         if (( current_time - last_health_check >= HEALTH_CHECK_INTERVAL )); then
             log_message "Health check cycle $loop_counter"
+            
+            # Run periodic consumer cleanup every N health checks
+            if (( loop_counter % CONSUMER_CLEANUP_FREQUENCY == 0 )); then
+                log_message "Running periodic consumer cleanup..."
+                bash scripts/cleanup-excess-consumers.sh >> "$MASTER_LOG" 2>&1
+                log_success "Consumer cleanup completed"
+            fi
             
             for component in "${TRAFFIC_GENERATORS[@]}" "${ERROR_GENERATORS[@]}"; do
                 check_component_health "$component"

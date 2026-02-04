@@ -179,6 +179,7 @@ Multiple cleanup scripts for different scenarios:
 - Identifies and removes excess consumers beyond the target (1 per queue)
 - Maintains single consumer per queue for proper backlog testing
 - Safe to run while system is operating
+- **Auto-cleanup**: Master orchestrator runs this automatically every ~5 minutes
 
 ### Full Environment Cleanup
 ```bash
