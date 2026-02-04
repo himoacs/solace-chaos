@@ -38,6 +38,18 @@ COMPONENT_PIDS=()
 COMPONENT_NAMES=()
 COMPONENT_START_TIMES=()
 
+find_component_index() {
+    local component="$1"
+    local i
+    for i in "${!COMPONENT_NAMES[@]}"; do
+        if [[ "${COMPONENT_NAMES[i]}" == "$component" ]]; then
+            echo "$i"
+            return 0
+        fi
+    done
+    echo "-1"
+}
+
 log_message() {
     local message="$1"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
@@ -61,18 +73,6 @@ log_error() {
     local message="$1"
     echo -e "${RED}❌ ${message}${NC}"
     echo "ERROR: ${message}" >> "$MASTER_LOG"
-}
-
-find_component_index() {
-    local component="$1"
-    local i
-    for i in "${!COMPONENT_NAMES[@]}"; do
-        if [[ "${COMPONENT_NAMES[i]}" == "$component" ]]; then
-            echo "$i"
-            return 0
-        fi
-    done
-    echo "-1"
 }
 
 start_component() {

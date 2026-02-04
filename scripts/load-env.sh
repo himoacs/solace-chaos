@@ -21,7 +21,9 @@ REQUIRED_VARS=(
 )
 
 for var in "${REQUIRED_VARS[@]}"; do
-    if [ -z "${!var}" ]; then
+    # Use eval for bash 3.2 compatibility instead of ${!var}
+    value=$(eval echo \$$var)
+    if [ -z "$value" ]; then
         echo "ERROR: Required environment variable $var is not set"
         exit 1
     fi
@@ -40,15 +42,35 @@ get_queue_usage() {
         return 1
     fi
     
-    # Query SEMP API for queue usage percentage
+    # Query SEMP API for queue usage
     local response=$(curl -s -u "${SOLACE_ADMIN_USER}:${SOLACE_ADMIN_PASSWORD}" \
         "${SOLACE_SEMP_URL}/SEMP/v2/monitor/msgVpns/${vpn_name}/queues/${queue_name}" 2>/dev/null)
     
     if [ $? -eq 0 ] && [ ! -z "$response" ]; then
-        # Parse quota usage percentage
+        # Try byte quota first
         local usage=$(echo "$response" | grep -o '"quotaByteUtilizationPercentage":[0-9.]*' | cut -d':' -f2 | head -1)
-        if [ ! -z "$usage" ]; then
+        if [ ! -z "$usage" ] && [ "$usage" != "null" ]; then
             echo "${usage%.*}"  # Convert to integer
+            return 0
+        fi
+        
+        # Try message spool usage percentage
+        usage=$(echo "$response" | grep -o '"msgSpoolUsagePercentage":[0-9.]*' | cut -d':' -f2 | head -1)
+        if [ ! -z "$usage" ] && [ "$usage" != "null" ]; then
+            echo "${usage%.*}"
+            return 0
+        fi
+        
+        # Fall back to message count estimation (assume 100K messages = 85%)
+        local msg_count=$(echo "$response" | grep -o '"spooledMsgCount":[0-9]*' | cut -d':' -f2 | head -1)
+        if [ ! -z "$msg_count" ] && [ "$msg_count" != "null" ]; then
+            # Estimate percentage: assume full at ~120K messages
+            local estimated_percent=$((msg_count * 100 / 120000))
+            # Cap at 100%
+            if [ $estimated_percent -gt 100 ]; then
+                estimated_percent=100
+            fi
+            echo "$estimated_percent"
             return 0
         fi
     fi
@@ -69,6 +91,20 @@ check_queue_full() {
     else
         return 1  # Queue is not full
     fi
+}
+
+# Function to wait for process IDs to exit cleanly
+wait_for_pids_to_exit() {
+    local pids="$@"
+    local max_wait=10
+    local count=0
+    
+    for pid in $pids; do
+        while kill -0 "$pid" 2>/dev/null && [ $count -lt $max_wait ]; do
+            sleep 1
+            count=$((count + 1))
+        done
+    done
 }
 
 wait_for_queue_to_drain() {
@@ -116,30 +152,6 @@ check_resource_limits() {
     fi
 }
 
-cleanup_sdkperf_processes() {
-    local filter="${1:-}"
-    
-    echo "$(date): Cleaning up SDKPerf processes${filter:+ with filter: $filter}..."
-    
-    if [ -z "$filter" ]; then
-        # Kill all SDKPerf processes
-        pkill -f "sdkperf_java" 2>/dev/null || true
-    else
-        # Kill processes matching the filter pattern
-        pkill -f "sdkperf_java.*${filter}" 2>/dev/null || true
-    fi
-    
-    # Wait a moment for cleanup
-    sleep 2
-    
-    # Force kill any remaining processes
-    if [ -z "$filter" ]; then
-        pkill -9 -f "sdkperf_java" 2>/dev/null || true
-    else
-        pkill -9 -f "sdkperf_java.*${filter}" 2>/dev/null || true
-    fi
-}
-
 # Direct queue clearing using SEMP API (immediate and efficient)
 clear_queue_messages() {
     local queue_name="$1"
@@ -176,48 +188,5 @@ clear_queue_messages() {
         # Fallback to consumer-based clearing
         drain_queue_manually "$queue_name" "$vpn_name" "consumer"
         return 1
-    fi
-}
-
-# Emergency queue drain function for manual queue clearing
-drain_queue_manually() {
-    local queue_name="$1"
-    local vpn_name="$2"
-    local method="${3:-api}"  # 'api' for immediate SEMP clearing, 'consumer' for drain with consumers
-    
-    if [ -z "$queue_name" ] || [ -z "$vpn_name" ]; then
-        echo "Usage: drain_queue_manually <queue_name> <vpn_name> [method: api|consumer]"
-        return 1
-    fi
-    
-    local start_usage=$(get_queue_usage "$queue_name" "$vpn_name")
-    echo "$(date): Queue ${queue_name} current usage: ${start_usage}%"
-    
-    if [ "$method" = "api" ]; then
-        # Use direct SEMP API clearing (immediate)
-        clear_queue_messages "$queue_name" "$vpn_name"
-    else
-        # Use consumer-based draining (slower but more realistic)
-        local duration=300
-        echo "$(date): Consumer-based drain started - ${queue_name} in ${vpn_name}"
-        echo "$(date): Draining for ${duration} seconds..."
-        
-        # Start multiple consumers to aggressively drain the queue
-        for i in {1..5}; do
-            timeout ${duration}s bash "${SDKPERF_SCRIPT_PATH}" \
-                -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-                -cu="${SOLACE_ADMIN_USER}" \
-                -cp="${SOLACE_ADMIN_PASSWORD}" \
-                -sql="${queue_name}" \
-                -md > /dev/null 2>&1 &
-        done
-        
-        # Monitor progress
-        sleep $duration
-        local end_usage=$(get_queue_usage "$queue_name" "$vpn_name")
-        echo "$(date): Consumer drain completed - ${queue_name}: ${start_usage}% -> ${end_usage}%"
-        
-        # Clean up drain consumers
-        pkill -f "$queue_name" 2>/dev/null || true
     fi
 }

@@ -6,9 +6,12 @@ TARGET_QUEUE="equity_order_queue"
 TARGET_VPN="trading-vpn"
 FULL_THRESHOLD=85  # Consider queue "full" at 85%
 DRAIN_THRESHOLD=20 # Resume attacks when below 20%
+DRAIN_PIDS=""      # Track drain consumer PIDs for cleanup
+PUBLISHER_PID=""   # Track publisher PID for control
 
 while true; do
     echo "$(date): Starting intelligent queue killer attack on ${TARGET_QUEUE}"
+    DRAIN_PIDS=""  # Reset drain consumer tracking for new cycle
     
     # Check if queue is already full
     if check_queue_full "${TARGET_QUEUE}" "${TARGET_VPN}" "${FULL_THRESHOLD}"; then
@@ -16,44 +19,23 @@ while true; do
         wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}"
     fi
     
-    # Start attack with connection retry logic
-    attack_successful=false
-    retry_count=0
-    max_retries=3
+    # Start persistent publisher in background to fill queue
+    echo "$(date): Starting persistent publisher to fill queue to ${FULL_THRESHOLD}%..."
+    bash "${SDKPERF_SCRIPT_PATH}" \
+        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+        -cu="${CHAOS_GENERATOR_USER}" \
+        -cp="${CHAOS_GENERATOR_PASSWORD}" \
+        -ptl="trading/orders/equities/NYSE/new" \
+        -mt=persistent \
+        -mr=1500 \
+        -mn=500000 \
+        -msa=5000 >> logs/queue-killer.log 2>&1 &
     
-    while [ ${retry_count} -lt ${max_retries} ] && [ "${attack_successful}" = false ]; do
-        echo "$(date): Starting attack attempt $((retry_count + 1))/${max_retries}"
-        
-        if bash "${SDKPERF_SCRIPT_PATH}" \
-            -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-            -cu="${CHAOS_GENERATOR_USER}" \
-            -cp="${CHAOS_GENERATOR_PASSWORD}" \
-            -ptl="trading/orders/equities/NYSE/new" \
-            -mt=persistent \
-            -mr=1000 \
-            -mn=100000 \
-            -msa=5000 >> logs/queue-killer.log 2>&1; then
-            
-            attack_successful=true
-            echo "$(date): Attack completed successfully"
-        else
-            retry_count=$((retry_count + 1))
-            echo "$(date): Attack failed, retry ${retry_count}/${max_retries}"
-            sleep 10
-        fi
-    done
+    PUBLISHER_PID=$!
+    echo "$(date): Publisher started (PID: ${PUBLISHER_PID}), monitoring queue fill..."
     
-    if [ "${attack_successful}" = false ]; then
-        echo "$(date): All attack attempts failed - waiting 300 seconds before retry"
-        sleep 300
-        continue
-    fi
-    
-    # Wait for queue to fill and then drain
-    echo "$(date): Monitoring queue fullness..."
-    
-    # Wait up to 10 minutes for queue to fill
-    fill_timeout=600
+    # Monitor queue until it reaches the threshold
+    fill_timeout=300  # 5 minutes max to fill
     start_time=$(date +%s)
     
     while true; do
@@ -61,20 +43,79 @@ while true; do
         elapsed=$((current_time - start_time))
         
         if check_queue_full "${TARGET_QUEUE}" "${TARGET_VPN}" "${FULL_THRESHOLD}"; then
-            echo "$(date): Queue successfully filled! Now waiting for drain..."
+            echo "$(date): 🚨 Queue reached ${FULL_THRESHOLD}%! Stopping publisher and starting drain consumers..."
+            
+            # Stop the publisher first
+            kill ${PUBLISHER_PID} 2>/dev/null
+            
+            # Start multiple fast drain consumers
+            for i in {1..5}; do
+                bash "${SDKPERF_SCRIPT_PATH}" \
+                    -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+                    -cu="${RISK_CALCULATOR_USER}" \
+                    -cp="${RISK_CALCULATOR_PASSWORD}" \
+                    -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
+                DRAIN_PIDS="$! $DRAIN_PIDS"
+            done
+            
+            echo "$(date): 🔄 Started 5 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
+            # Wait for queue to drain to threshold
+            wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}" 300
+            
+            # Stop all drain consumers
+            if [ -n "$DRAIN_PIDS" ]; then
+                echo "$(date): ✅ Queue drained! Stopping all drain consumers..."
+                kill $DRAIN_PIDS 2>/dev/null
+                wait_for_pids_to_exit $DRAIN_PIDS
+            fi
+            
+            echo "$(date): 💤 Cycle complete. Waiting 60 seconds before next attack..."
+            sleep 60
             break
+            
         elif [ ${elapsed} -ge ${fill_timeout} ]; then
-            echo "$(date): Queue didn't fill within ${fill_timeout}s - checking current state"
+            echo "$(date): ⏰ Publisher timeout after ${fill_timeout}s"
             usage=$(get_queue_usage "${TARGET_QUEUE}" "${TARGET_VPN}")
-            echo "$(date): Queue usage: ${usage}% - continuing anyway"
+            echo "$(date): Final queue usage: ${usage}%"
+            
+            # Kill publisher and clean up any partial fill
+            kill ${PUBLISHER_PID} 2>/dev/null
+            
+            if [ "$usage" -gt 10 ]; then
+                echo "$(date): Cleaning up ${usage}% partial fill..."
+                for i in {1..2}; do
+                    bash "${SDKPERF_SCRIPT_PATH}" \
+                        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+                        -cu="${RISK_CALCULATOR_USER}" \
+                        -cp="${RISK_CALCULATOR_PASSWORD}" \
+                        -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
+                    DRAIN_PIDS="$! $DRAIN_PIDS"
+                done
+                
+                wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" 5 60
+                
+                if [ -n "$DRAIN_PIDS" ]; then
+                    kill $DRAIN_PIDS 2>/dev/null
+                fi
+            fi
+            
             break
         else
+            # Show progress every 30 seconds
+            if [ $((elapsed % 30)) -eq 0 ]; then
+                current_usage=$(get_queue_usage "${TARGET_QUEUE}" "${TARGET_VPN}")
+                echo "$(date): Queue at ${current_usage}% after ${elapsed}s (target: ${FULL_THRESHOLD}%)"
+            fi
             sleep 10
         fi
     done
     
-    # Wait for queue to drain before next attack
+    # Wait for queue to drain before next attack (with active consumers now running)
     wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}"
+    
+    # Clean up drain consumers after queue drains
+    echo "$(date): Cleaning up drain consumers"
+    cleanup_sdkperf_processes "${TARGET_QUEUE}"
     
     echo "$(date): Queue killer cycle completed - brief pause before next cycle"
     sleep 60
