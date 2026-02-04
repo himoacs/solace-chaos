@@ -30,6 +30,7 @@ while true; do
         -cu="${MARKET_DATA_FEED_USER}" \
         -cp="${MARKET_DATA_FEED_PASSWORD}" \
         -ptl="market-data/equities/quotes/NYSE/AAPL,market-data/equities/quotes/NASDAQ/MSFT,market-data/equities/quotes/LSE/GOOGL" \
+        -stl="market-data/equities/quotes/>" \
         -mr="${CURRENT_RATE}" \
         -mn=999999999 \
         -msa=256 >> logs/baseline-market.log 2>&1 &

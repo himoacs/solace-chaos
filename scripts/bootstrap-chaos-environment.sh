@@ -529,6 +529,7 @@ while true; do
         -cu="${MARKET_DATA_FEED_USER}" \
         -cp="${MARKET_DATA_FEED_PASSWORD}" \
         -ptl="market-data/equities/quotes/NYSE/AAPL,market-data/equities/quotes/NASDAQ/MSFT,market-data/equities/quotes/LSE/GOOGL" \
+        -stl="market-data/equities/quotes/>" \
         -mr="${CURRENT_RATE}" \
         -mn=999999999 \
         -msa=256 >> logs/baseline-market.log 2>&1 &
@@ -545,6 +546,18 @@ EOF
     cat > traffic-generators/baseline-trade-flow.sh <<'EOF'
 #!/bin/bash
 source scripts/load-env.sh
+
+# Cleanup function for graceful shutdown
+cleanup_baseline_trade() {
+    echo "$(date): Baseline trade flow shutting down - cleaning up processes"
+    cleanup_sdkperf_processes "trading/orders/equities"
+    cleanup_sdkperf_processes "equity_order_queue" 
+    cleanup_sdkperf_processes "baseline_queue"
+    exit 0
+}
+
+# Set up signal handlers
+trap cleanup_baseline_trade SIGTERM SIGINT
 
 get_weekend_rate() {
     local day_of_week=$(date +%u)
@@ -569,10 +582,25 @@ while true; do
         -mr="${CURRENT_RATE}" \
         -mn=999999999 \
         -msa=512 >> logs/baseline-trade.log 2>&1 &
+    
+    # Add queue consumers for automatic draining (prevents permanent queue buildup)
+    bash "${SDKPERF_SCRIPT_PATH}" \
+        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+        -cu="${RISK_CALCULATOR_USER}" \
+        -cp="${RISK_CALCULATOR_PASSWORD}" \
+        -sql="equity_order_queue" >> logs/baseline-trade.log 2>&1 &
+    
+    bash "${SDKPERF_SCRIPT_PATH}" \
+        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+        -cu="${SETTLEMENT_PROCESSOR_USER}" \
+        -cp="${SETTLEMENT_PROCESSOR_PASSWORD}" \
+        -sql="baseline_queue" >> logs/baseline-trade.log 2>&1 &
         
     # Let it run for 1 hour then restart for rate adjustments
     sleep 3600
     pkill -f "trading/orders/equities" 2>/dev/null
+    pkill -f "equity_order_queue" 2>/dev/null 
+    pkill -f "baseline_queue" 2>/dev/null
     
     echo "$(date): Baseline trade flow cycle completed - restarting for rate check"
 done
@@ -1072,6 +1100,134 @@ for var in "${REQUIRED_VARS[@]}"; do
         exit 1
     fi
 done
+
+# SEMP API configuration
+SOLACE_SEMP_URL="http://${SOLACE_BROKER_HOST}:8080"
+
+# SEMP API Helper Functions
+get_queue_usage() {
+    local queue_name="$1"
+    local vpn_name="$2"
+    
+    if [ -z "$queue_name" ] || [ -z "$vpn_name" ]; then
+        echo "0"
+        return 1
+    fi
+    
+    # Query SEMP API for queue usage percentage
+    local response=$(curl -s -u "${SOLACE_ADMIN_USER}:${SOLACE_ADMIN_PASSWORD}" \
+        "${SOLACE_SEMP_URL}/SEMP/v2/monitor/msgVpns/${vpn_name}/queues/${queue_name}" 2>/dev/null)
+    
+    if [ $? -eq 0 ] && [ ! -z "$response" ]; then
+        # Parse quota usage percentage
+        local usage=$(echo "$response" | grep -o '"quotaByteUtilizationPercentage":[0-9.]*' | cut -d':' -f2 | head -1)
+        if [ ! -z "$usage" ]; then
+            echo "${usage%.*}"  # Convert to integer
+            return 0
+        fi
+    fi
+    
+    echo "0"
+    return 1
+}
+
+check_queue_full() {
+    local queue_name="$1"
+    local vpn_name="$2"
+    local threshold="${3:-85}"
+    
+    local usage=$(get_queue_usage "$queue_name" "$vpn_name")
+    
+    if [ "$usage" -ge "$threshold" ]; then
+        return 0  # Queue is full
+    else
+        return 1  # Queue is not full
+    fi
+}
+
+wait_for_queue_to_drain() {
+    local queue_name="$1"
+    local vpn_name="$2"
+    local threshold="${3:-20}"
+    local timeout="${4:-1800}"  # 30 minutes default
+    
+    echo "$(date): Waiting for queue ${queue_name} to drain below ${threshold}%..."
+    
+    local start_time=$(date +%s)
+    while true; do
+        local usage=$(get_queue_usage "$queue_name" "$vpn_name")
+        
+        if [ "$usage" -le "$threshold" ]; then
+            echo "$(date): Queue drained to ${usage}% - continuing"
+            return 0
+        fi
+        
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+        
+        if [ "$elapsed" -ge "$timeout" ]; then
+            echo "$(date): Drain timeout after ${timeout}s - queue still at ${usage}%"
+            return 1
+        fi
+        
+        sleep 30
+    done
+}
+
+check_resource_limits() {
+    local max_connections="${1:-40}"
+    
+    # Count current SDKPerf connections using process counting
+    local current_connections=$(pgrep -f "sdkperf_java" | wc -l | tr -d ' ')
+    
+    echo "Connection usage - Default: , Trading: , Total: ${current_connections}/${max_connections}"
+    
+    if [ "$current_connections" -ge "$max_connections" ]; then
+        echo "$(date): Connection limit reached (${current_connections}/${max_connections})"
+        return 1  # Limit exceeded
+    else
+        return 0  # Within limits
+    fi
+}
+
+# Direct queue clearing using SEMP API (immediate and efficient)
+clear_queue_messages() {
+    local queue_name="$1"
+    local vpn_name="$2"
+    
+    if [ -z "$queue_name" ] || [ -z "$vpn_name" ]; then
+        echo "Usage: clear_queue_messages <queue_name> <vpn_name>"
+        return 1
+    fi
+    
+    echo "$(date): Clearing all messages from queue ${queue_name} in VPN ${vpn_name}..."
+    
+    # Use SEMP API action endpoint to delete all messages (correct method: PUT)
+    local response=$(curl -X PUT \
+        -u "${SOLACE_ADMIN_USER}:${SOLACE_ADMIN_PASSWORD}" \
+        -H "Content-Type: application/json" \
+        "${SOLACE_SEMP_URL}/SEMP/v2/action/msgVpns/${vpn_name}/queues/${queue_name}/deleteMsgs" \
+        -d "{}" \
+        -s -w "%{http_code}")
+    
+    local http_code="${response: -3}"
+    local body="${response%???}"
+    
+    if [[ "$http_code" =~ ^(200|204)$ ]]; then
+        echo "$(date): Successfully cleared queue ${queue_name}"
+        sleep 2  # Brief pause for queue stats to update
+        local new_usage=$(get_queue_usage "$queue_name" "$vpn_name")
+        echo "$(date): Queue usage after clearing: ${new_usage}%"
+        return 0
+    else
+        echo "$(date): Failed to clear queue ${queue_name} - HTTP ${http_code}"
+        echo "Response: ${body}"
+        echo "$(date): Falling back to consumer-based draining..."
+        # Fallback to consumer-based clearing
+        drain_queue_manually "$queue_name" "$vpn_name" "consumer"
+        return 1
+    fi
+}
 EOF
 
     # Status check script
