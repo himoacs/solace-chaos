@@ -44,10 +44,12 @@ cleanup_queue_consumers() {
 
 echo "$(date): Starting consumer cleanup..."
 
-# Clean up excess consumers (allow max 2 per queue)
-cleanup_queue_consumers "equity_order_queue" 2
-cleanup_queue_consumers "baseline_queue" 2
-cleanup_queue_consumers "bridge_receive_queue" 2
+# Clean up excess consumers - exclusive queues should have max 1 consumer
+cleanup_queue_consumers "equity_order_queue" 1
+cleanup_queue_consumers "baseline_queue" 1 
+cleanup_queue_consumers "bridge_receive_queue" 1
+cleanup_queue_consumers "cross_market_data_queue" 1
+cleanup_queue_consumers "risk_calculation_queue" 1
 # Unused queues removed: options_order_queue, settlement_queue
 
 echo "$(date): Consumer cleanup complete"

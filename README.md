@@ -52,12 +52,11 @@ That's it! The system will run continuously generating various error conditions 
 - **trading-vpn**: Order processing and settlement (newly created VPN)
 
 ### Queue Configuration
-- **3 Active Queues**: Streamlined from 5 to 3 queues for focused testing
-  - `equity_order_queue`: Trade order processing (exclusive access)
-  - `market_data_queue`: Market data distribution (exclusive access) 
-  - `risk_queue`: Risk management calculations (exclusive access)
+- **5 Active Queues**: Complete multi-VPN queue architecture for comprehensive testing
+  - **trading-vpn**: `equity_order_queue`, `baseline_queue`, `bridge_receive_queue` 
+  - **default**: `cross_market_data_queue`, `risk_calculation_queue`
 - **Exclusive Access**: Prevents zombie consumers and ensures single consumer per queue
-- **5MB Quota**: Small quotas designed to fill quickly for backlog testing
+- **Optimized Quotas**: 80-150MB quotas designed for realistic backlog testing
 - **Non-Persistent Messages**: Optimized for high throughput (8k+ msg/sec)
 
 ### Error Scenarios
@@ -110,7 +109,7 @@ All configuration is in `.env` file:
 
 Terraform manages:
 - VPN creation and configuration
-- **3 optimized queues** with exclusive access and 5MB quotas
+- **5 optimized queues** with exclusive access across both VPNs
 - User accounts with proper ACL profiles
 - Cross-VPN bridges (optional)
 
