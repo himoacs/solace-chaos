@@ -327,16 +327,6 @@ queues = {
     quota = 100
     topic_subscriptions = ["trading/orders/equities/>"]
   }
-  "options_order_queue" = {
-    vpn = "${TRADING_VPN}"
-    quota = 50
-    topic_subscriptions = ["trading/orders/options/>"]
-  }
-  "settlement_queue" = {
-    vpn = "${TRADING_VPN}"
-    quota = 75
-    topic_subscriptions = ["trading/settlement/>"]
-  }
   "baseline_queue" = {
     vpn = "${TRADING_VPN}"
     quota = 80
