@@ -56,18 +56,18 @@ That's it! The system will run continuously generating various error conditions 
   - **trading-vpn**: `equity_order_queue`, `baseline_queue`, `bridge_receive_queue` 
   - **default**: `cross_market_data_queue`
 - **Exclusive Access**: Prevents zombie consumers and ensures single consumer per queue
-- **Optimized Quotas**: 80-150MB quotas designed for realistic backlog testing
+- **Optimized Quotas**: 50-150MB quotas designed for realistic backlog testing with fast queue fill capabilities
 - **Non-Persistent Messages**: Optimized for high throughput (8k+ msg/sec)
 
 ### Error Scenarios
-- **Queue Buildup**: High-rate publishing (8k msg/sec) vs single consumers for realistic backlog
-- **Queue Full**: Small queues (5MB) that fill quickly to 100% quota usage
+- **Queue Buildup**: Dual high-rate publishers (35k msg/sec combined, 256KB messages) overwhelm consumers for rapid realistic backlog
+- **Queue Full**: Reduced quotas (50MB for equity_order_queue) that fill quickly to 85% threshold, cycles every hour
 - **ACL Violations**: Restricted users trying to access forbidden topics
 - **Connection Limits**: Connection storms hitting VPN limits
 - **Cross-VPN Bridge**: Bridge stress testing between VPNs
 
 ### Traffic Patterns
-- **High-Rate Publishing**: 8000+ msgs/sec for queue buildup testing
+- **High-Rate Publishing**: 35k msg/sec with dual publishers (20k + 15k) and 256KB messages for rapid queue buildup
 - **Continuous Publishers**: Auto-restarting publishers for unattended operation
 - **Single Consumers**: One consumer per queue to maintain backlog
 - **Weekend-Aware**: Automatically reduces rates on weekends (realistic market simulation)

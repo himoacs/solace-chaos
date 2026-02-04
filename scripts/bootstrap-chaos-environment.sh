@@ -324,7 +324,7 @@ vpns = {
 queues = {
   "equity_order_queue" = {
     vpn = "${TRADING_VPN}"
-    quota = 100
+    quota = 50
     topic_subscriptions = ["trading/orders/equities/>"]
   }
   "baseline_queue" = {
@@ -583,12 +583,13 @@ while true; do
         -msa=512 >> logs/baseline-trade.log 2>&1 &
     
     # Add limited queue consumers for automatic draining (prevents permanent queue buildup)
-    bash "${SDKPERF_SCRIPT_PATH}" \
-        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-        -cu="${ORDER_ROUTER_USER}" \
-        -cp="${ORDER_ROUTER_PASSWORD}" \
-        -sql="equity_order_queue" >> logs/baseline-trade.log 2>&1 &
-    EQUITY_CONSUMER_PID=$!
+    # NOTE: Skip equity_order_queue - reserved for chaos testing (queue-killer)
+    # bash "${SDKPERF_SCRIPT_PATH}" \
+    #     -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+    #     -cu="${ORDER_ROUTER_USER}" \
+    #     -cp="${ORDER_ROUTER_PASSWORD}" \
+    #     -sql="equity_order_queue" >> logs/baseline-trade.log 2>&1 &
+    # EQUITY_CONSUMER_PID=$!
     
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
