@@ -34,8 +34,8 @@ resource "solacebroker_msg_vpn" "vpns" {
   authentication_basic_enabled = true
   authentication_basic_type    = "internal"
   
-  # Message spool configuration
-  max_msg_spool_usage = 10000  # 10GB
+  # Message spool configuration - increased for larger queues
+  max_msg_spool_usage = 2000  # 2GB per VPN
 }
 
 # Create ACL profiles - dynamically based on VPN configuration
@@ -127,8 +127,8 @@ resource "solacebroker_msg_vpn_queue" "queues" {
   egress_enabled  = true
   permission      = "consume"
   
-  # Convert quota from MB to bytes
-  max_msg_spool_usage = min(each.value.quota * 1024 * 1024, 800000)  # Convert MB to bytes, cap at broker limit
+  # Quota values are in MB directly (no conversion needed)
+  max_msg_spool_usage = each.value.quota  # Direct MB values
   
   # Enable reject to sender for overflow testing
   reject_msg_to_sender_on_discard_behavior = "when-queue-enabled"

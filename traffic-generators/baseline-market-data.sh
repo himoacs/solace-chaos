@@ -1,13 +1,15 @@
 #!/bin/bash
 source scripts/load-env.sh
 
-# Trap signals for cleanup
-cleanup() {
-    echo "$(date): Received shutdown signal - cleaning up baseline market data processes..." >> logs/baseline-market.log
-    pkill -P $$ 2>/dev/null
+# Cleanup function for graceful shutdown
+cleanup_baseline_market() {
+    echo "$(date): Baseline market data shutting down - cleaning up processes"
+    cleanup_sdkperf_processes "market-data/equities/quotes"
     exit 0
 }
-trap cleanup SIGTERM SIGINT
+
+# Set up signal handlers
+trap cleanup_baseline_market SIGTERM SIGINT
 
 get_weekend_rate() {
     local day_of_week=$(date +%u)
@@ -18,45 +20,23 @@ get_weekend_rate() {
     fi
 }
 
-# Start continuous market data flow with publisher + subscriber
-echo "$(date): Starting continuous baseline market data..." >> logs/baseline-market.log
-
-# Start subscriber first  
-echo "$(date): Starting market data subscriber..." >> logs/baseline-market.log
-bash "${SDKPERF_SCRIPT_PATH}" \
-    -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-    -cu="${MARKET_DATA_CONSUMER_USER}" \
-    -cp="${MARKET_DATA_CONSUMER_PASSWORD}" \
-    -stl="market-data/equities/NYSE/baseline/>" >> logs/baseline-market-subscriber.log 2>&1 &
-
-SUBSCRIBER_PID=$!
-
-# Wait a moment for subscriber to connect
-sleep 5
-
-# Start continuous publisher
 while true; do
     CURRENT_RATE=$(get_weekend_rate)
-    echo "$(date): Starting market data publisher - rate: ${CURRENT_RATE} msgs/sec" >> logs/baseline-market.log
+    echo "$(date): Starting baseline market data feed - rate: ${CURRENT_RATE} msgs/sec"
     
-    # Publish to market-data/equities/NYSE/baseline/quotes (specific topic that subscriber will receive via wildcard)
+    # Publish to multiple securities across different exchanges
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
         -cu="${MARKET_DATA_FEED_USER}" \
         -cp="${MARKET_DATA_FEED_PASSWORD}" \
-        -ptl="market-data/equities/NYSE/baseline/quotes" \
+        -ptl="market-data/equities/quotes/NYSE/AAPL,market-data/equities/quotes/NASDAQ/MSFT,market-data/equities/quotes/LSE/GOOGL" \
         -mr="${CURRENT_RATE}" \
         -mn=999999999 \
-        -msa=256 >> logs/baseline-market-publisher.log 2>&1 &
+        -msa=256 >> logs/baseline-market.log 2>&1 &
         
-    PUBLISHER_PID=$!
-    
-    # Wait for this publisher cycle and check health
+    # Let it run for 1 hour then restart for rate adjustments
     sleep 3600
+    pkill -f "market-data/equities/quotes" 2>/dev/null
     
-    # Stop current publisher for restart
-    kill $PUBLISHER_PID 2>/dev/null
-    wait $PUBLISHER_PID 2>/dev/null
-    
-    echo "$(date): Market data publisher cycle completed - restarting" >> logs/baseline-market.log
+    echo "$(date): Baseline market data cycle completed - restarting for rate check"
 done

@@ -300,41 +300,41 @@ vpns = {
   }
 }
 
-# Queue Configuration by VPN
+# Queue Configuration by VPN (Quotas in MB for long-term operation)
 queues = {
   "equity_order_queue" = {
     vpn = "${TRADING_VPN}"
-    quota = 2
-    topic_subscriptions = ["trading/orders/equity/>"]
+    quota = 100
+    topic_subscriptions = ["trading/orders/equities/>"]
   }
   "options_order_queue" = {
     vpn = "${TRADING_VPN}"
-    quota = 1
+    quota = 50
     topic_subscriptions = ["trading/orders/options/>"]
   }
   "settlement_queue" = {
     vpn = "${TRADING_VPN}"
-    quota = 3
+    quota = 75
     topic_subscriptions = ["trading/settlement/>"]
   }
   "baseline_queue" = {
     vpn = "${TRADING_VPN}"
-    quota = 5
-    topic_subscriptions = ["trading/baseline/>"]
+    quota = 80
+    topic_subscriptions = ["trading/orders/>"]
   }
   "bridge_receive_queue" = {
     vpn = "${TRADING_VPN}"
-    quota = 3
+    quota = 120
     topic_subscriptions = ["market-data/bridge-stress/>"]
   }
   "cross_market_data_queue" = {
     vpn = "${MARKET_DATA_VPN}"
-    quota = 4
+    quota = 150
     topic_subscriptions = ["market-data/bridge-stress/>"]
   }
   "risk_calculation_queue" = {
     vpn = "${MARKET_DATA_VPN}"
-    quota = 5
+    quota = 100
     topic_subscriptions = ["trading/risk/>"]
   }
 }
@@ -468,7 +468,7 @@ validate_connectivity() {
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
         -cu="${CHAOS_GENERATOR_USER}" \
         -cp="${CHAOS_GENERATOR_PASSWORD}" \
-        -ptl="bootstrap/test" \
+        -ptl="bootstrap/connectivity-test" \
         -mr=1 -mn=5 >/dev/null 2>&1
     
     if [ $? -eq 0 ]; then
@@ -500,6 +500,16 @@ create_traffic_generators() {
 #!/bin/bash
 source scripts/load-env.sh
 
+# Cleanup function for graceful shutdown
+cleanup_baseline_market() {
+    echo "$(date): Baseline market data shutting down - cleaning up processes"
+    cleanup_sdkperf_processes "market-data/equities/quotes"
+    exit 0
+}
+
+# Set up signal handlers
+trap cleanup_baseline_market SIGTERM SIGINT
+
 get_weekend_rate() {
     local day_of_week=$(date +%u)
     if [ $day_of_week -eq 6 ] || [ $day_of_week -eq 7 ]; then
@@ -513,17 +523,21 @@ while true; do
     CURRENT_RATE=$(get_weekend_rate)
     echo "$(date): Starting baseline market data feed - rate: ${CURRENT_RATE} msgs/sec"
     
+    # Publish to multiple securities across different exchanges
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
         -cu="${MARKET_DATA_FEED_USER}" \
         -cp="${MARKET_DATA_FEED_PASSWORD}" \
-        -ptl="market-data/baseline/heartbeat" \
+        -ptl="market-data/equities/quotes/NYSE/AAPL,market-data/equities/quotes/NASDAQ/MSFT,market-data/equities/quotes/LSE/GOOGL" \
         -mr="${CURRENT_RATE}" \
-        -mn=3600 \
-        -msa=256 2>&1 | tee -a logs/baseline-market.log
+        -mn=999999999 \
+        -msa=256 >> logs/baseline-market.log 2>&1 &
         
-    echo "$(date): Baseline market data cycle completed - restarting in 30 seconds"
-    sleep 30
+    # Let it run for 1 hour then restart for rate adjustments
+    sleep 3600
+    pkill -f "market-data/equities/quotes" 2>/dev/null
+    
+    echo "$(date): Baseline market data cycle completed - restarting for rate check"
 done
 EOF
 
@@ -545,18 +559,22 @@ while true; do
     CURRENT_RATE=$(get_weekend_rate)
     echo "$(date): Starting baseline trade flow - rate: ${CURRENT_RATE} msgs/sec"
     
+    # Publish trade executions for multiple securities
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
         -cu="${ORDER_ROUTER_USER}" \
         -cp="${ORDER_ROUTER_PASSWORD}" \
-        -ptl="trading/baseline/heartbeat" \
+        -ptl="trading/orders/equities/NYSE/AAPL,trading/orders/equities/NASDAQ/TSLA" \
         -mt=persistent \
         -mr="${CURRENT_RATE}" \
-        -mn=3600 \
-        -msa=512 2>&1 | tee -a logs/baseline-trade.log
+        -mn=999999999 \
+        -msa=512 >> logs/baseline-trade.log 2>&1 &
         
-    echo "$(date): Baseline trade flow cycle completed - restarting in 30 seconds"
-    sleep 30
+    # Let it run for 1 hour then restart for rate adjustments
+    sleep 3600
+    pkill -f "trading/orders/equities" 2>/dev/null
+    
+    echo "$(date): Baseline trade flow cycle completed - restarting for rate check"
 done
 EOF
 
@@ -570,21 +588,83 @@ create_error_generators() {
 #!/bin/bash
 source scripts/load-env.sh
 
+# Target queue configuration
+TARGET_QUEUE="equity_order_queue"
+TARGET_VPN="trading-vpn"
+FULL_THRESHOLD=85  # Consider queue "full" at 85%
+DRAIN_THRESHOLD=20 # Resume attacks when below 20%
+
 while true; do
-    echo "$(date): Starting queue killer attack on equity-order-queue"
+    echo "$(date): Starting intelligent queue killer attack on ${TARGET_QUEUE}"
     
-    bash "${SDKPERF_SCRIPT_PATH}" \
-        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-        -cu="${CHAOS_GENERATOR_USER}" \
-        -cp="${CHAOS_GENERATOR_PASSWORD}" \
-        -ptl="trading/orders/equity/NYSE/new" \
-        -mt=persistent \
-        -mr=1000 \
-        -mn=100000 \
-        -msa=5000 2>&1 | tee -a logs/queue-killer.log
+    # Check if queue is already full
+    if check_queue_full "${TARGET_QUEUE}" "${TARGET_VPN}" "${FULL_THRESHOLD}"; then
+        echo "$(date): Queue ${TARGET_QUEUE} already full - waiting for drain first"
+        wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}"
+    fi
+    
+    # Start attack with connection retry logic
+    attack_successful=false
+    retry_count=0
+    max_retries=3
+    
+    while [ ${retry_count} -lt ${max_retries} ] && [ "${attack_successful}" = false ]; do
+        echo "$(date): Starting attack attempt $((retry_count + 1))/${max_retries}"
         
-    echo "$(date): Queue killer stopped (queue probably full!) - waiting 120 seconds"
-    sleep 120
+        if bash "${SDKPERF_SCRIPT_PATH}" \
+            -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+            -cu="${CHAOS_GENERATOR_USER}" \
+            -cp="${CHAOS_GENERATOR_PASSWORD}" \
+            -ptl="trading/orders/equities/NYSE/new" \
+            -mt=persistent \
+            -mr=1000 \
+            -mn=100000 \
+            -msa=5000 >> logs/queue-killer.log 2>&1; then
+            
+            attack_successful=true
+            echo "$(date): Attack completed successfully"
+        else
+            retry_count=$((retry_count + 1))
+            echo "$(date): Attack failed, retry ${retry_count}/${max_retries}"
+            sleep 10
+        fi
+    done
+    
+    if [ "${attack_successful}" = false ]; then
+        echo "$(date): All attack attempts failed - waiting 300 seconds before retry"
+        sleep 300
+        continue
+    fi
+    
+    # Wait for queue to fill and then drain
+    echo "$(date): Monitoring queue fullness..."
+    
+    # Wait up to 10 minutes for queue to fill
+    fill_timeout=600
+    start_time=$(date +%s)
+    
+    while true; do
+        current_time=$(date +%s)
+        elapsed=$((current_time - start_time))
+        
+        if check_queue_full "${TARGET_QUEUE}" "${TARGET_VPN}" "${FULL_THRESHOLD}"; then
+            echo "$(date): Queue successfully filled! Now waiting for drain..."
+            break
+        elif [ ${elapsed} -ge ${fill_timeout} ]; then
+            echo "$(date): Queue didn't fill within ${fill_timeout}s - checking current state"
+            usage=$(get_queue_usage "${TARGET_QUEUE}" "${TARGET_VPN}")
+            echo "$(date): Queue usage: ${usage}% - continuing anyway"
+            break
+        else
+            sleep 10
+        fi
+    done
+    
+    # Wait for queue to drain before next attack
+    wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}"
+    
+    echo "$(date): Queue killer cycle completed - brief pause before next cycle"
+    sleep 60
 done
 EOF
 
@@ -596,33 +676,34 @@ source scripts/load-env.sh
 while true; do
     echo "$(date): Testing ACL violations across all VPNs"
     
-    # Try to access premium market data with restricted user
+    # Try to access premium market data with restricted user (gentle continuous)
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
         -cu="${RESTRICTED_MARKET_USER}" \
         -cp="${RESTRICTED_MARKET_PASSWORD}" \
         -ptl="market-data/premium/level3/NYSE/AAPL" \
-        -mr=5 -mn=50 -msa=256 2>&1 | tee -a logs/acl-violator.log &
+        -mr=1 -mn=999999999 -msa=256 >> logs/acl-violator.log 2>&1 &
     
-    # Try to access admin trading functions with restricted user
+    # Try to access admin trading functions with restricted user (gentle continuous)
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
         -cu="${RESTRICTED_TRADE_USER}" \
         -cp="${RESTRICTED_TRADE_PASSWORD}" \
         -ptl="trading/admin/cancel-all-orders" \
-        -mr=5 -mn=50 -msa=256 2>&1 | tee -a logs/acl-violator.log &
+        -mr=1 -mn=999999999 -msa=256 >> logs/acl-violator.log 2>&1 &
     
-    # Try cross-VPN access without proper permissions
+    # Try cross-VPN access without proper permissions (gentle continuous)
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
         -cu="${RESTRICTED_MARKET_USER}" \
         -cp="${RESTRICTED_MARKET_PASSWORD}" \
-        -ptl="trading/orders/equity/NYSE/new" \
-        -mr=5 -mn=50 -msa=256 2>&1 | tee -a logs/acl-violator.log &
+        -ptl="trading/orders/equities/NYSE/new" \
+        -mr=1 -mn=999999999 -msa=256 >> logs/acl-violator.log 2>&1 &
     
-    wait
-    echo "$(date): Multi-VPN ACL violation tests completed - waiting 90 seconds"
-    sleep 90
+    # Let run for 1 hour, then restart
+    sleep 3600
+    pkill -f "premium/level3\|admin/cancel-all-orders" 2>/dev/null
+    echo "$(date): ACL violation test cycle completed - restarting"
 done
 EOF
 
@@ -631,22 +712,40 @@ EOF
 #!/bin/bash
 source scripts/load-env.sh
 
+# Cleanup function for graceful shutdown
+cleanup_connection_bomber() {
+    echo "$(date): Connection bomber shutting down - cleaning up processes"
+    cleanup_sdkperf_processes "market-data/equities/quotes/NYSE"
+    exit 0
+}
+
+# Set up signal handlers
+trap cleanup_connection_bomber SIGTERM SIGINT
+
 while true; do
-    echo "$(date): Bombing default VPN with connections"
+    echo "$(date): Starting gentle connection pressure test"
     
-    # Start 25 market data consumers to hit connection limits
+    # Check resource limits before starting
+    if ! check_resource_limits 75; then  # Higher limit for intensive connection testing
+        echo "$(date): Resource limits exceeded - waiting before retry"
+        sleep 300
+        continue
+    fi
+    
+    # Start 25 long-running market data consumers (intensive connection load)
     for i in {1..25}; do
         bash "${SDKPERF_SCRIPT_PATH}" \
             -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
             -cu="${MARKET_DATA_CONSUMER_USER}" \
             -cp="${MARKET_DATA_CONSUMER_PASSWORD}" \
-            -stl="market-data/equities/NYSE/+/quotes" \
-            -mr=1 -mn=1000 2>&1 | tee -a logs/connection-bomber.log &
+            -stl="market-data/equities/quotes/NYSE/>" >> logs/connection-bomber.log 2>&1 &
     done
     
-    wait
-    echo "$(date): Market data connection bombing completed - waiting 300 seconds"
-    sleep 300
+    # Let connections run for 2 hours then cycle
+    sleep 7200
+    cleanup_sdkperf_processes "market-data/equities/quotes/NYSE"
+    echo "$(date): Connection pressure cycle completed - restarting"
+    sleep 60
 done
 EOF
 
@@ -664,7 +763,22 @@ while true; do
         -cu="${MARKET_DATA_FEED_USER}" \
         -cp="${MARKET_DATA_FEED_PASSWORD}" \
         -ptl="market-data/bridge-stress/equities/NYSE/AAPL/L1" \
-        -mr=5000 -mn=50000 -msa=2048 2>&1 | tee -a logs/bridge-killer.log &
+        -mr=2000 -mn=50000 -msa=2048 >> logs/bridge-killer.log 2>&1 &
+    
+    # Additional publishers for different exchanges and securities
+    bash "${SDKPERF_SCRIPT_PATH}" \
+        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+        -cu="${MARKET_DATA_FEED_USER}" \
+        -cp="${MARKET_DATA_FEED_PASSWORD}" \
+        -ptl="market-data/bridge-stress/equities/NASDAQ/MSFT/L1" \
+        -mr=2000 -mn=50000 -msa=2048 >> logs/bridge-killer.log 2>&1 &
+        
+    bash "${SDKPERF_SCRIPT_PATH}" \
+        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+        -cu="${MARKET_DATA_FEED_USER}" \
+        -cp="${MARKET_DATA_FEED_PASSWORD}" \
+        -ptl="market-data/bridge-stress/equities/LSE/TSLA/L2" \
+        -mr=1000 -mn=50000 -msa=2048 >> logs/bridge-killer.log 2>&1 &
     
     PUB_PID=$!
     
@@ -675,7 +789,7 @@ while true; do
             -cu="${RISK_CALCULATOR_USER}" \
             -cp="${RISK_CALCULATOR_PASSWORD}" \
             -sql=cross_market_data_queue \
-            -pe 2>&1 | tee -a logs/bridge-killer.log &
+            -pe >> logs/bridge-killer.log 2>&1 &
     done
     
     # Cross-VPN bridge consumers on trading-vpn (actual bridge testing)
@@ -685,7 +799,7 @@ while true; do
             -cu="${ORDER_ROUTER_USER}" \
             -cp="${ORDER_ROUTER_PASSWORD}" \
             -sql=bridge_receive_queue \
-            -pe 2>&1 | tee -a logs/bridge-killer.log &
+            -pe >> logs/bridge-killer.log 2>&1 &
     done
     
     # Let it run for 10 minutes then kill
@@ -739,9 +853,22 @@ ERROR_GENERATORS=(
     "error-generators/cross-vpn-bridge-killer.sh"
 )
 
-# Component management
-declare -A COMPONENT_PIDS
-declare -A COMPONENT_START_TIMES
+# Component management - bash 3.2 compatible arrays
+COMPONENT_PIDS=()
+COMPONENT_NAMES=()
+COMPONENT_START_TIMES=()
+
+find_component_index() {
+    local component="$1"
+    local i
+    for i in "${!COMPONENT_NAMES[@]}"; do
+        if [[ "${COMPONENT_NAMES[i]}" == "$component" ]]; then
+            echo "$i"
+            return 0
+        fi
+    done
+    echo "-1"
+}
 
 log_message() {
     local message="$1"
@@ -771,8 +898,10 @@ log_error() {
 start_component() {
     local component="$1"
     local component_name=$(basename "$component" .sh)
+    local existing_index
     
-    if [[ -n "${COMPONENT_PIDS[$component]}" ]] && kill -0 "${COMPONENT_PIDS[$component]}" 2>/dev/null; then
+    existing_index=$(find_component_index "$component")
+    if [[ "$existing_index" != "-1" ]] && kill -0 "${COMPONENT_PIDS[existing_index]}" 2>/dev/null; then
         return 0
     fi
     
@@ -780,8 +909,15 @@ start_component() {
     
     "./$component" &
     local pid=$!
-    COMPONENT_PIDS[$component]=$pid
-    COMPONENT_START_TIMES[$component]=$(date +%s)
+    
+    if [[ "$existing_index" == "-1" ]]; then
+        COMPONENT_NAMES+=("$component")
+        COMPONENT_PIDS+=("$pid")
+        COMPONENT_START_TIMES+=($(date +%s))
+    else
+        COMPONENT_PIDS[existing_index]="$pid"
+        COMPONENT_START_TIMES[existing_index]=$(date +%s)
+    fi
     
     log_success "Started $component_name (PID: $pid)"
 }
@@ -789,10 +925,20 @@ start_component() {
 check_component_health() {
     local component="$1"
     local component_name=$(basename "$component" .sh)
-    local pid="${COMPONENT_PIDS[$component]}"
+    local component_index
+    local pid
     
-    if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
-        log_warning "Component $component_name is not running - restarting"
+    component_index=$(find_component_index "$component")
+    if [[ "$component_index" == "-1" ]]; then
+        log_error "No PID tracked for $component_name"
+        start_component "$component"
+        return 1
+    fi
+    
+    pid="${COMPONENT_PIDS[component_index]}"
+    
+    if ! kill -0 "$pid" 2>/dev/null; then
+        log_warning "$component_name (PID: $pid) is not running - restarting"
         start_component "$component"
         return 1
     fi
@@ -804,8 +950,10 @@ cleanup_and_exit() {
     local signal=$1
     log_message "Received signal $signal - shutting down gracefully"
     
-    for component in "${!COMPONENT_PIDS[@]}"; do
-        local pid="${COMPONENT_PIDS[$component]}"
+    local i
+    for i in "${!COMPONENT_NAMES[@]}"; do
+        local component="${COMPONENT_NAMES[i]}"
+        local pid="${COMPONENT_PIDS[i]}"
         local component_name=$(basename "$component" .sh)
         
         if kill -0 "$pid" 2>/dev/null; then
@@ -860,7 +1008,7 @@ main_orchestrator_loop() {
         
         # Heartbeat every hour
         if (( loop_counter % 120 == 0 )); then
-            log_message "Orchestrator heartbeat - loop $loop_counter, components: ${#COMPONENT_PIDS[@]} managed"
+            log_message "Orchestrator heartbeat - loop $loop_counter, components: ${#COMPONENT_NAMES[@]} managed"
         fi
         
         sleep 30

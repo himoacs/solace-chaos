@@ -12,6 +12,9 @@ case "$1" in
     "start"|"run"|"chaos")
         exec "$SCRIPT_DIR/scripts/master-chaos.sh" "${@:2}"
         ;;
+    "weekly"|"week")
+        exec "$SCRIPT_DIR/scripts/weekly-chaos-runner.sh" "${@:2}"
+        ;;
     "stop"|"kill")
         # Kill all chaos testing processes
         echo "🛑 Stopping all chaos testing processes..."
@@ -65,7 +68,8 @@ case "$1" in
         echo ""
         echo "Available commands:"
         echo "  ./chaos.sh bootstrap    # Initial environment setup"
-        echo "  ./chaos.sh start        # Start chaos testing"
+        echo "  ./chaos.sh start        # Start chaos testing (runs indefinitely)"
+        echo "  ./chaos.sh weekly       # Start chaos testing with weekly restarts"
         echo "  ./chaos.sh stop         # Stop all chaos testing processes"
         echo "  ./chaos.sh daemon       # Process management daemon"
         echo "  ./chaos.sh status       # Check component status"
