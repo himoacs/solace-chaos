@@ -126,7 +126,7 @@ resource "solacebroker_msg_vpn_queue" "queues" {
   ingress_enabled = true
   egress_enabled  = true
   permission      = "consume"
-  access_type     = "non-exclusive"  # Allow multiple consumers
+  access_type     = "exclusive"  # Only one consumer per queue
   
   # Quota values are in MB directly (no conversion needed)
   max_msg_spool_usage = each.value.quota  # Direct MB values

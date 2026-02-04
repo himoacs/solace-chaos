@@ -1,5 +1,4 @@
-# Queue Killer - Intelligent fill-then-drain chaos testing
-# Tests queue resilience with realistic consumer patterns on non-exclusive queues
+#!/bin/bash
 source scripts/load-env.sh
 
 # Target queue configuration
@@ -16,11 +15,10 @@ while true; do
     
     # Check if queue is already full
     if check_queue_full "${TARGET_QUEUE}" "${TARGET_VPN}" "${FULL_THRESHOLD}"; then
-        echo "$(date): 🚨 Queue ${TARGET_QUEUE} already at ${FULL_THRESHOLD}%! Starting drain consumers immediately..."
+        echo "$(date): 🚨 Queue ${TARGET_QUEUE} already at ${FULL_THRESHOLD}%! Starting drain consumer immediately..."
         
-        # Start multiple fast drain consumers
-        for i in {1..5}; do
-            bash "${SDKPERF_SCRIPT_PATH}" \
+        # Start drain consumer - exclusive queues allow only one consumer per queue
+        bash "${SDKPERF_SCRIPT_PATH}" \
                 -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
                 -cu="${ORDER_ROUTER_USER}" \
                 -cp="${ORDER_ROUTER_PASSWORD}" \
@@ -71,9 +69,8 @@ while true; do
             # Stop the publisher first
             kill ${PUBLISHER_PID} 2>/dev/null
             
-            # Start 2 fast drain consumers - non-exclusive queues handle multiple consumers efficiently
-            for i in {1..2}; do
-                bash "${SDKPERF_SCRIPT_PATH}" \
+            # Start drain consumer - exclusive queues allow only one consumer per queue
+            bash "${SDKPERF_SCRIPT_PATH}" \
                     -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
                     -cu="${ORDER_ROUTER_USER}" \
                     -cp="${ORDER_ROUTER_PASSWORD}" \
@@ -132,14 +129,4 @@ while true; do
             sleep 10
         fi
     done
-    
-    # Wait for queue to drain before next attack (with active consumers now running)
-    wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}"
-    
-    # Clean up drain consumers after queue drains
-    echo "$(date): Cleaning up drain consumers"
-    cleanup_sdkperf_processes "${TARGET_QUEUE}"
-    
-    echo "$(date): Queue killer cycle completed - brief pause before next cycle"
-    sleep 60
 done

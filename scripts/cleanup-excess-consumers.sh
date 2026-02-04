@@ -48,8 +48,7 @@ echo "$(date): Starting consumer cleanup..."
 cleanup_queue_consumers "equity_order_queue" 2
 cleanup_queue_consumers "baseline_queue" 2
 cleanup_queue_consumers "bridge_receive_queue" 2
-cleanup_queue_consumers "options_order_queue" 2
-cleanup_queue_consumers "settlement_queue" 2
+# Unused queues removed: options_order_queue, settlement_queue
 
 echo "$(date): Consumer cleanup complete"
 

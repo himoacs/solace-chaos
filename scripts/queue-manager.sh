@@ -29,8 +29,6 @@ show_queue_status() {
         "equity_order_queue:trading-vpn"
         "baseline_queue:trading-vpn"
         "bridge_receive_queue:trading-vpn"
-        "options_order_queue:trading-vpn"
-        "settlement_queue:trading-vpn"
     )
     
     for queue_vpn in "${queues[@]}"; do
@@ -74,8 +72,6 @@ clear_all_queues() {
         "equity_order_queue:trading-vpn"
         "baseline_queue:trading-vpn"
         "bridge_receive_queue:trading-vpn"
-        "options_order_queue:trading-vpn"
-        "settlement_queue:trading-vpn"
     )
     
     for queue_vpn in "${queues[@]}"; do

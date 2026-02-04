@@ -657,11 +657,10 @@ while true; do
     
     # Check if queue is already full
     if check_queue_full "${TARGET_QUEUE}" "${TARGET_VPN}" "${FULL_THRESHOLD}"; then
-        echo "$(date): 🚨 Queue ${TARGET_QUEUE} already at ${FULL_THRESHOLD}%! Starting drain consumers immediately..."
+        echo "$(date): 🚨 Queue ${TARGET_QUEUE} already at ${FULL_THRESHOLD}%! Starting drain consumer immediately..."
         
-        # Start 2 fast drain consumers - non-exclusive queues support multiple consumers efficiently
-        for i in {1..2}; do
-            bash "${SDKPERF_SCRIPT_PATH}" \
+        # Start drain consumer - exclusive queues allow only one consumer per queue
+        bash "${SDKPERF_SCRIPT_PATH}" \
                 -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
                 -cu="${ORDER_ROUTER_USER}" \
                 -cp="${ORDER_ROUTER_PASSWORD}" \
@@ -712,9 +711,8 @@ while true; do
             # Stop the publisher first
             kill ${PUBLISHER_PID} 2>/dev/null
             
-            # Start 2 fast drain consumers - non-exclusive queues support multiple consumers efficiently
-            for i in {1..2}; do
-                bash "${SDKPERF_SCRIPT_PATH}" \
+            # Start drain consumer - exclusive queues allow only one consumer per queue
+            bash "${SDKPERF_SCRIPT_PATH}" \
                     -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
                     -cu="${ORDER_ROUTER_USER}" \
                     -cp="${ORDER_ROUTER_PASSWORD}" \

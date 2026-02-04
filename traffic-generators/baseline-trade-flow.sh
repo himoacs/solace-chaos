@@ -23,10 +23,6 @@ get_weekend_rate() {
 }
 
 while true; do
-    # Clean up any excess consumers before starting new cycle
-    echo "$(date): Cleaning up excess consumers before new cycle..."
-    "${SCRIPT_DIR}/../scripts/cleanup-excess-consumers.sh" &>/dev/null || true
-    
     CURRENT_RATE=$(get_weekend_rate)
     echo "$(date): Starting baseline trade flow - rate: ${CURRENT_RATE} msgs/sec"
     

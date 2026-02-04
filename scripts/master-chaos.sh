@@ -10,26 +10,6 @@ cd "$PROJECT_ROOT"
 # Load environment variables
 source scripts/load-env.sh
 
-# Function to clean up old log files (older than 24 hours)
-cleanup_old_logs() {
-    echo "$(date): 🧹 Cleaning up log files older than 24 hours..." | tee -a "$MASTER_LOG"
-    
-    # Clean main logs directory (files older than 1440 minutes = 24 hours)
-    local cleaned=0
-    cleaned=$(find "logs" -name "*.log" -type f -mmin +1440 -print -exec rm -f {} \; 2>/dev/null | wc -l)
-    
-    # Clean scripts/logs directory  
-    local scripts_cleaned=0
-    scripts_cleaned=$(find "scripts/logs" -name "*.log" -type f -mmin +1440 -print -exec rm -f {} \; 2>/dev/null | wc -l)
-    scripts_cleaned=$((scripts_cleaned + $(find "scripts/logs" -name "*.start" -type f -mmin +1440 -print -exec rm -f {} \; 2>/dev/null | wc -l)))
-    
-    # Clean old log backups (older than 7 days)
-    local backups_cleaned=0
-    backups_cleaned=$(find "scripts/log-backups" -type d -mtime +7 -print -exec rm -rf {} \; 2>/dev/null | wc -l)
-    
-    echo "$(date): ✅ Log cleanup completed: $cleaned main logs, $scripts_cleaned script logs, $backups_cleaned old backups" | tee -a "$MASTER_LOG"
-}
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -211,11 +191,6 @@ main_orchestrator_loop() {
             log_message "Orchestrator heartbeat - loop $loop_counter, components: ${#COMPONENT_NAMES[@]} managed"
         fi
         
-        # Log cleanup every 24 hours (2880 loops of 30 seconds)
-        if (( loop_counter % 2880 == 0 )); then
-            cleanup_old_logs
-        fi
-        
         sleep 30
     done
 }
@@ -232,9 +207,6 @@ main() {
         echo "❌ Environment script not found. Run bootstrap-chaos-environment.sh first."
         exit 1
     fi
-    
-    # Initial log cleanup
-    cleanup_old_logs
     
     # Start orchestration
     main_orchestrator_loop
