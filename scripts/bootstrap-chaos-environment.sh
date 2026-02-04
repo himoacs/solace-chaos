@@ -603,24 +603,31 @@ while true; do
         -mn=999999999 \
         -msa=512 >> logs/baseline-trade.log 2>&1 &
     
-    # Add queue consumers for automatic draining (prevents permanent queue buildup)
+    # Add limited queue consumers for automatic draining (prevents permanent queue buildup)
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
         -cu="${ORDER_ROUTER_USER}" \
         -cp="${ORDER_ROUTER_PASSWORD}" \
         -sql="equity_order_queue" >> logs/baseline-trade.log 2>&1 &
+    EQUITY_CONSUMER_PID=$!
     
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
         -cu="${ORDER_ROUTER_USER}" \
         -cp="${ORDER_ROUTER_PASSWORD}" \
         -sql="baseline_queue" >> logs/baseline-trade.log 2>&1 &
+    BASELINE_CONSUMER_PID=$!
         
     # Let it run for 1 hour then restart for rate adjustments
     sleep 3600
+    
+    # Kill processes by PID to ensure cleanup
     pkill -f "trading/orders/equities" 2>/dev/null
-    pkill -f "equity_order_queue" 2>/dev/null 
-    pkill -f "baseline_queue" 2>/dev/null
+    [ -n "$EQUITY_CONSUMER_PID" ] && kill $EQUITY_CONSUMER_PID 2>/dev/null
+    [ -n "$BASELINE_CONSUMER_PID" ] && kill $BASELINE_CONSUMER_PID 2>/dev/null
+    
+    # Wait a moment for cleanup
+    sleep 2
     
     echo "$(date): Baseline trade flow cycle completed - restarting for rate check"
 done
@@ -676,7 +683,7 @@ while true; do
         sleep 60
     fi
     
-    # Start persistent publisher in background to fill queue
+    # Start persistent publisher in background to fill queue (very high rate to overcome active consumers)
     echo "$(date): Starting persistent publisher to fill queue to ${FULL_THRESHOLD}%..."
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
@@ -684,7 +691,7 @@ while true; do
         -cp="${CHAOS_GENERATOR_PASSWORD}" \
         -ptl="trading/orders/equities/NYSE/new" \
         -mt=persistent \
-        -mr=1500 \
+        -mr=10000 \
         -mn=500000 \
         -msa=5000 >> logs/queue-killer.log 2>&1 &
     

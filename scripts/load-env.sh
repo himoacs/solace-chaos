@@ -42,17 +42,21 @@ get_queue_usage() {
         return 1
     fi
     
-    # Query SEMP API for queue usage using collections.msgs.count
+    # Query SEMP API for queue usage
     local response=$(curl -s -u "${SOLACE_ADMIN_USER}:${SOLACE_ADMIN_PASSWORD}" \
         "${SOLACE_SEMP_URL}/SEMP/v2/monitor/msgVpns/${vpn_name}/queues/${queue_name}" 2>/dev/null)
     
     if [ $? -eq 0 ] && [ ! -z "$response" ]; then
-        # Get collections.msgs.count (number of available message objects)
-        local msg_count=$(echo "$response" | jq -r '.collections.msgs.count // 0')
+        # Get current message spool usage and quota (both in bytes)
+        local current_usage=$(echo "$response" | jq -r '.data.msgSpoolUsage // 0')
+        local quota_mb=$(echo "$response" | jq -r '.data.maxMsgSpoolUsage // 0')
         
-        if [ ! -z "$msg_count" ] && [ "$msg_count" != "null" ]; then
-            # Calculate percentage based on reasonable queue capacity (1000 messages = 100%)
-            local usage_percent=$((msg_count * 100 / 1000))
+        if [ ! -z "$current_usage" ] && [ "$current_usage" != "null" ] && 
+           [ ! -z "$quota_mb" ] && [ "$quota_mb" != "null" ] && [ "$quota_mb" -gt 0 ]; then
+            # Convert quota from MB to bytes (multiply by 1048576)
+            local quota_bytes=$((quota_mb * 1048576))
+            # Calculate percentage based on current usage vs quota
+            local usage_percent=$((current_usage * 100 / quota_bytes))
             # Cap at 100%
             if [ $usage_percent -gt 100 ]; then
                 usage_percent=100
@@ -61,12 +65,23 @@ get_queue_usage() {
             return 0
         fi
         
-        # Fall back to spooledMsgCount if collections data not available
-        local spooled_count=$(echo "$response" | grep -o '"spooledMsgCount":[0-9]*' | cut -d':' -f2 | head -1)
-        if [ ! -z "$spooled_count" ] && [ "$spooled_count" != "null" ]; then
-            # Estimate percentage: assume full at ~120K messages
-            local estimated_percent=$((spooled_count * 100 / 120000))
-            # Cap at 100%
+        # Fallback: try message count based calculation
+        local spooled_count=$(echo "$response" | jq -r '.data.spooledMsgCount // 0')
+        local quota_count=$(echo "$response" | jq -r '.data.maxMsgCount // 0')
+        
+        if [ ! -z "$spooled_count" ] && [ "$spooled_count" != "null" ] &&
+           [ ! -z "$quota_count" ] && [ "$quota_count" != "null" ] && [ "$quota_count" -gt 0 ]; then
+            local usage_percent=$((spooled_count * 100 / quota_count))
+            if [ $usage_percent -gt 100 ]; then
+                usage_percent=100
+            fi
+            echo "$usage_percent"
+            return 0
+        fi
+        
+        # Last fallback: estimate based on spooled byte count (assume 100MB = 100%)
+        if [ ! -z "$spooled_bytes" ] && [ "$spooled_bytes" != "null" ]; then
+            local estimated_percent=$((spooled_bytes * 100 / 104857600)) # 100MB in bytes
             if [ $estimated_percent -gt 100 ]; then
                 estimated_percent=100
             fi
