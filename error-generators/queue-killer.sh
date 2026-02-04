@@ -24,7 +24,6 @@ while true; do
                 -cp="${ORDER_ROUTER_PASSWORD}" \
                 -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
             DRAIN_PIDS="$! $DRAIN_PIDS"
-        done
         
         echo "$(date): 🔄 Started 2 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
         wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}" 300
@@ -76,7 +75,6 @@ while true; do
                     -cp="${ORDER_ROUTER_PASSWORD}" \
                     -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
                 DRAIN_PIDS="$! $DRAIN_PIDS"
-            done
             
             echo "$(date): 🔄 Started 2 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
             # Wait for queue to drain to threshold
