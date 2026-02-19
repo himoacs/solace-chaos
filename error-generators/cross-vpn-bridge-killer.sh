@@ -33,13 +33,14 @@ while true; do
     # No need for additional SDKPerf consumers
     
     # Cross-VPN bridge consumers on trading-vpn (actual bridge testing)
-    # Start single drain consumer for exclusive queue
-    bash "${SDKPERF_SCRIPT_PATH}" \
-        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-        -cu="${ORDER_ROUTER_USER}" \
-        -cp="${ORDER_ROUTER_PASSWORD}" \
-        -sql=bridge_receive_queue \
-        -pe >> logs/bridge-killer.log 2>&1 &
+    for i in {1..2}; do
+        bash "${SDKPERF_SCRIPT_PATH}" \
+            -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+            -cu="${ORDER_ROUTER_USER}" \
+            -cp="${ORDER_ROUTER_PASSWORD}" \
+            -sql=bridge_receive_queue \
+            -pe >> logs/bridge-killer.log 2>&1 &
+    done
     
     # Let it run for 10 minutes then kill
     sleep 600
