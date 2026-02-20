@@ -4,7 +4,8 @@
 ENV_FILE="$(dirname $0)/../.env"
 
 if [ -f "$ENV_FILE" ]; then
-    export $(cat "$ENV_FILE" | grep -v '^#' | xargs)
+    # Strip inline comments and empty lines before exporting
+    export $(cat "$ENV_FILE" | grep -v '^#' | sed 's/#.*$//' | grep -v '^\s*$' | xargs)
 else
     echo "ERROR: .env file not found at $ENV_FILE"
     echo "Please run bootstrap-chaos-environment.sh first"
