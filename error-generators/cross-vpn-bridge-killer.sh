@@ -36,7 +36,7 @@ while true; do
     # Bridge client will consume from cross_market_data_queue automatically
     # No need for additional SDKPerf consumers
     
-    # Cross-VPN bridge consumers on trading-vpn (actual bridge testing)
+    # Cross-VPN bridge consumers on trading VPN (actual bridge testing)
     # Start single drain consumer for exclusive queue
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \

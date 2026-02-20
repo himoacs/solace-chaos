@@ -6,7 +6,7 @@ CYCLE_INTERVAL="${QUEUE_KILLER_CYCLE_INTERVAL:-3600}"
 
 # Target queue configuration
 TARGET_QUEUE="equity_order_queue"
-TARGET_VPN="trading-vpn"
+TARGET_VPN="trading"
 FULL_THRESHOLD=85  # Consider queue "full" at 85%
 DRAIN_THRESHOLD=20 # Resume attacks when below 20%
 DRAIN_PIDS=""      # Track drain consumer PIDs for cleanup

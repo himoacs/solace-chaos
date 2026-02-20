@@ -11,7 +11,7 @@ source "$SCRIPT_DIR/../scripts/load-env.sh" || {
 
 # Configuration
 TARGET_QUEUE="equity_order_queue"
-TARGET_VPN="trading-vpn"
+TARGET_VPN="trading"
 FULL_THRESHOLD=85
 DRAIN_THRESHOLD=20
 BASE_RATE=4000           # Base publisher rate (msg/sec) 

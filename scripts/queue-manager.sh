@@ -15,10 +15,10 @@ show_usage() {
     echo "  $0 monitor                   # Real-time queue monitoring"
     echo ""
     echo "Examples:"
-    echo "  $0 clear equity_order_queue trading-vpn     # Immediate clear (trading VPN)"
-    echo "  $0 clear cross_market_data_queue default    # Clear from default VPN"
-    echo "  $0 drain baseline_queue trading-vpn         # Consumer drain"
-    echo "  $0 clear-all                                # Emergency clear all"
+    echo "  $0 clear equity_order_queue trading          # Immediate clear (trading VPN)"
+    echo "  $0 clear cross_market_data_queue market_data # Clear from market_data VPN"
+    echo "  $0 drain baseline_queue trading              # Consumer drain"
+    echo "  $0 clear-all                                 # Emergency clear all"
 }
 
 show_queue_status() {
@@ -27,10 +27,10 @@ show_queue_status() {
     echo ""
     
     local queues=(
-        "equity_order_queue:trading-vpn"
-        "baseline_queue:trading-vpn"
-        "bridge_receive_queue:trading-vpn"
-        "cross_market_data_queue:default"
+        "equity_order_queue:trading"
+        "baseline_queue:trading"
+        "bridge_receive_queue:trading"
+        "cross_market_data_queue:market_data"
     )
     
     for queue_vpn in "${queues[@]}"; do
@@ -71,10 +71,10 @@ clear_all_queues() {
     echo ""
     
     local queues=(
-        "equity_order_queue:trading-vpn"
-        "baseline_queue:trading-vpn"
-        "bridge_receive_queue:trading-vpn"
-        "cross_market_data_queue:default"
+        "equity_order_queue:trading"
+        "baseline_queue:trading"
+        "bridge_receive_queue:trading"
+        "cross_market_data_queue:market_data"
     )
     
     for queue_vpn in "${queues[@]}"; do
@@ -93,10 +93,10 @@ drain_all_queues() {
     echo "=============================================="
     echo ""
     
-    drain_queue_manually "equity_order_queue" "trading-vpn" "consumer" &
-    drain_queue_manually "baseline_queue" "trading-vpn" "consumer" &
-    drain_queue_manually "bridge_receive_queue" "trading-vpn" "consumer" &
-    drain_queue_manually "cross_market_data_queue" "default" "consumer" &
+    drain_queue_manually "equity_order_queue" "trading" "consumer" &
+    drain_queue_manually "baseline_queue" "trading" "consumer" &
+    drain_queue_manually "bridge_receive_queue" "trading" "consumer" &
+    drain_queue_manually "cross_market_data_queue" "market_data" "consumer" &
     
     echo "Waiting for all drain operations to complete..."
     wait

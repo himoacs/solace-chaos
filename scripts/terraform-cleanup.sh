@@ -124,7 +124,7 @@ main() {
     # Show warning
     log "$RED" "⚠️  WARNING: This will destroy ALL resources created by Terraform!"
     log "$RED" "This includes:"
-    log "$RED" "  - VPNs (trading-vpn)"
+    log "$RED" "  - VPNs (trading, market_data)"
     log "$RED" "  - All queues and their messages"
     log "$RED" "  - All user accounts"
     log "$RED" "  - All ACL profiles"

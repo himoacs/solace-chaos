@@ -638,7 +638,7 @@ source scripts/load-env.sh
 
 # Target queue configuration
 TARGET_QUEUE="equity_order_queue"
-TARGET_VPN="trading-vpn"
+TARGET_VPN="trading"
 FULL_THRESHOLD=85  # Consider queue "full" at 85%
 DRAIN_THRESHOLD=20 # Resume attacks when below 20%
 DRAIN_PIDS=""      # Track drain consumer PIDs for cleanup
@@ -881,7 +881,7 @@ while true; do
     # Bridge client will consume from cross_market_data_queue automatically
     # No need for additional SDKPerf consumers
     
-    # Cross-VPN bridge consumers on trading-vpn (actual bridge testing)
+    # Cross-VPN bridge consumers on trading VPN (actual bridge testing)
     for i in {1..2}; do
         bash "${SDKPERF_SCRIPT_PATH}" \
             -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \

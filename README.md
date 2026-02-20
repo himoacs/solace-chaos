@@ -4,7 +4,7 @@ A comprehensive chaos testing framework for Solace PubSub+ brokers, designed for
 
 ## Features
 
-- **Two-VPN Architecture**: default (existing) and trading-vpn (new)  
+- **Two-VPN Architecture**: market_data and trading (both newly created)  
 - **Optimized Queue Buildup**: Exclusive queues with high-rate publishers for realistic backlog testing
 - **Realistic Error Generation**: Queue overflow, ACL violations, connection limits, cross-VPN bridge failures  
 - **Capital Markets Focus**: Market data distribution and trade order processing scenarios
@@ -48,13 +48,13 @@ That's it! The system will run continuously generating various error conditions 
 ## Architecture
 
 ### VPNs
-- **default**: Market data, integration, and risk management (uses existing VPN)
-- **trading-vpn**: Order processing and settlement (newly created VPN)
+- **market_data**: Market data, integration, and risk management
+- **trading**: Order processing and settlement
 
 ### Queue Configuration
 - **5 Active Queues**: Complete multi-VPN queue architecture for comprehensive testing
-  - **trading-vpn**: `equity_order_queue`, `baseline_queue`, `bridge_receive_queue` 
-  - **default**: `cross_market_data_queue`
+  - **trading**: `equity_order_queue`, `baseline_queue`, `bridge_receive_queue` 
+  - **market_data**: `cross_market_data_queue`
 - **Exclusive Access**: Prevents zombie consumers and ensures single consumer per queue
 - **Optimized Quotas**: 50-150MB quotas designed for realistic backlog testing with fast queue fill capabilities
 - **Non-Persistent Messages**: Optimized for high throughput (8k+ msg/sec)

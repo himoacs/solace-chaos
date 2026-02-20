@@ -1,5 +1,5 @@
 # Solace Chaos Testing Environment - Terraform Configuration
-# Two-VPN Setup: default (existing) + trading-vpn (new)
+# Two-VPN Setup: market_data (new) + trading (new)
 # Provider: Software Event Broker (Docker, VMs, Software broker)
 
 terraform {
@@ -18,11 +18,9 @@ provider "solacebroker" {
   url      = var.solace_broker_url
 }
 
-# Create VPNs (skip default VPN as it already exists)
+# Create VPNs
 resource "solacebroker_msg_vpn" "vpns" {
-  for_each = {
-    for k, v in var.vpns : k => v if v.name != "default"
-  }
+  for_each = var.vpns
 
   msg_vpn_name                    = each.value.name
   enabled                        = true
@@ -42,39 +40,39 @@ resource "solacebroker_msg_vpn" "vpns" {
 # Create ACL profiles - dynamically based on VPN configuration
 resource "solacebroker_msg_vpn_acl_profile" "acl_profiles" {
   for_each = {
-    # Default VPN profiles
+    # Market Data VPN profiles
     "market_data_publisher" = {
-      vpn = "default"
+      vpn = "market_data"
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
     }
     "market_data_subscriber" = {
-      vpn = "default"
+      vpn = "market_data"
       connect_action = "allow"
       publish_action = "disallow"
       subscribe_action = "allow"
     }
     "risk_management" = {
-      vpn = "default"
+      vpn = "market_data"
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
     }
     "integration_service" = {
-      vpn = "default"
+      vpn = "market_data"
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
     }
     "restricted_market_access" = {
-      vpn = "default"
+      vpn = "market_data"
       connect_action = "allow"
       publish_action = "disallow"
       subscribe_action = "disallow"
     }
-    "bridge_access_default" = {
-      vpn = "default"
+    "bridge_access_market_data" = {
+      vpn = "market_data"
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
@@ -82,25 +80,25 @@ resource "solacebroker_msg_vpn_acl_profile" "acl_profiles" {
     
     # Trading VPN profiles
     "trade_processor" = {
-      vpn = "trading-vpn"
+      vpn = "trading"
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
     }
     "chaos_testing" = {
-      vpn = "trading-vpn"
+      vpn = "trading"
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
     }
     "restricted_trade_access" = {
-      vpn = "trading-vpn"
+      vpn = "trading"
       connect_action = "allow"
       publish_action = "disallow"
       subscribe_action = "disallow"
     }
     "bridge_access" = {
-      vpn = "trading-vpn"
+      vpn = "trading"
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
@@ -114,7 +112,7 @@ resource "solacebroker_msg_vpn_acl_profile" "acl_profiles" {
   publish_topic_default_action     = each.value.publish_action
   subscribe_topic_default_action   = each.value.subscribe_action
 
-  # For trading-vpn, depend on the VPN being created
+  # Depend on VPNs being created
   depends_on = [solacebroker_msg_vpn.vpns]
 }
 
@@ -135,7 +133,7 @@ resource "solacebroker_msg_vpn_queue" "queues" {
   # Enable reject to sender for overflow testing
   reject_msg_to_sender_on_discard_behavior = "when-queue-enabled"
 
-  # For trading-vpn queues, depend on the VPN being created
+  # Depend on VPNs being created
   depends_on = [solacebroker_msg_vpn.vpns]
 }
 
@@ -166,19 +164,19 @@ resource "solacebroker_msg_vpn_queue_subscription" "all_subscriptions" {
 }
 
 # Create client profiles for bridge connections
-resource "solacebroker_msg_vpn_client_profile" "bridge_client_profile" {
-  msg_vpn_name                    = "default"
+resource "solacebroker_msg_vpn_client_profile" "bridge_client_profile_market_data" {
+  msg_vpn_name                    = "market_data"
   client_profile_name             = "bridge_client_profile"
   allow_bridge_connections_enabled = true
   allow_guaranteed_endpoint_create_enabled = true
   allow_guaranteed_msg_receive_enabled = true
   allow_guaranteed_msg_send_enabled = true
   
-  depends_on = [solacebroker_msg_vpn_acl_profile.acl_profiles]
+  depends_on = [solacebroker_msg_vpn.vpns, solacebroker_msg_vpn_acl_profile.acl_profiles]
 }
 
 resource "solacebroker_msg_vpn_client_profile" "bridge_client_profile_trading" {
-  msg_vpn_name                    = "trading-vpn"
+  msg_vpn_name                    = "trading"
   client_profile_name             = "bridge_client_profile"
   allow_bridge_connections_enabled = true
   allow_guaranteed_endpoint_create_enabled = true
@@ -190,7 +188,7 @@ resource "solacebroker_msg_vpn_client_profile" "bridge_client_profile_trading" {
 
 # Create client profile for guaranteed messaging in trading VPN
 resource "solacebroker_msg_vpn_client_profile" "guaranteed_messaging_profile" {
-  msg_vpn_name                    = "trading-vpn"
+  msg_vpn_name                    = "trading"
   client_profile_name             = "guaranteed_messaging"
   allow_bridge_connections_enabled = false
   allow_guaranteed_endpoint_create_enabled = true
@@ -208,18 +206,18 @@ resource "solacebroker_msg_vpn_client_username" "users" {
   client_username       = each.value.username
   password              = each.value.password
   acl_profile_name      = each.value.acl_profile
-  client_profile_name   = contains(["bridge_user", "bridge_user_default"], each.key) ? "bridge_client_profile" : (contains(["order_router", "chaos_generator"], each.key) ? "guaranteed_messaging" : "default")
+  client_profile_name   = contains(["bridge_user", "bridge_user_market_data"], each.key) ? "bridge_client_profile" : (contains(["order_router", "chaos_generator"], each.key) ? "guaranteed_messaging" : "default")
   enabled               = true
 
-  depends_on = [solacebroker_msg_vpn_acl_profile.acl_profiles, solacebroker_msg_vpn_client_profile.bridge_client_profile, solacebroker_msg_vpn_client_profile.bridge_client_profile_trading, solacebroker_msg_vpn_client_profile.guaranteed_messaging_profile]
+  depends_on = [solacebroker_msg_vpn_acl_profile.acl_profiles, solacebroker_msg_vpn_client_profile.bridge_client_profile_market_data, solacebroker_msg_vpn_client_profile.bridge_client_profile_trading, solacebroker_msg_vpn_client_profile.guaranteed_messaging_profile]
 }
 
 # Cross-VPN Bridge Configuration (conditional)
-resource "solacebroker_msg_vpn_bridge" "default_to_trading_bridge" {
+resource "solacebroker_msg_vpn_bridge" "market_data_to_trading_bridge" {
   count = var.enable_cross_vpn_bridge ? 1 : 0
 
-  msg_vpn_name                          = "default"
-  bridge_name                           = "default-to-trading-bridge"
+  msg_vpn_name                          = "market_data"
+  bridge_name                           = "market_data-to-trading-bridge"
   bridge_virtual_router                 = "primary"
   enabled                               = true
   max_ttl                               = 8
@@ -233,10 +231,10 @@ resource "solacebroker_msg_vpn_bridge" "default_to_trading_bridge" {
 resource "solacebroker_msg_vpn_bridge_remote_msg_vpn" "trading_vpn_remote" {
   count = var.enable_cross_vpn_bridge ? 1 : 0
 
-  msg_vpn_name            = "default"
-  bridge_name             = "default-to-trading-bridge"
+  msg_vpn_name            = "market_data"
+  bridge_name             = "market_data-to-trading-bridge"
   bridge_virtual_router   = "primary"
-  remote_msg_vpn_name     = "trading-vpn"
+  remote_msg_vpn_name     = "trading"
   remote_msg_vpn_location = "127.0.0.1:55555"
   enabled                 = true
   client_username         = var.bridge_username
@@ -244,15 +242,15 @@ resource "solacebroker_msg_vpn_bridge_remote_msg_vpn" "trading_vpn_remote" {
   tls_enabled             = false
   queue_binding           = "bridge_receive_queue"
   
-  depends_on = [solacebroker_msg_vpn_bridge.default_to_trading_bridge, solacebroker_msg_vpn_queue.queues]
+  depends_on = [solacebroker_msg_vpn_bridge.market_data_to_trading_bridge, solacebroker_msg_vpn_queue.queues]
 }
 
 # Bridge topic subscriptions for market data bridge stress testing
 resource "solacebroker_msg_vpn_bridge_remote_subscription" "bridge_stress_subscription" {
   count = var.enable_cross_vpn_bridge ? 1 : 0
 
-  msg_vpn_name              = "default"
-  bridge_name               = "default-to-trading-bridge"
+  msg_vpn_name              = "market_data"
+  bridge_name               = "market_data-to-trading-bridge"
   bridge_virtual_router     = "primary"
   remote_subscription_topic = "market-data/bridge-stress/>"
   deliver_always_enabled    = true
@@ -260,12 +258,12 @@ resource "solacebroker_msg_vpn_bridge_remote_subscription" "bridge_stress_subscr
   depends_on = [solacebroker_msg_vpn_bridge_remote_msg_vpn.trading_vpn_remote]
 }
 
-# Return bridge from trading-vpn to default (required for bidirectional communication)
-resource "solacebroker_msg_vpn_bridge" "trading_to_default_bridge" {
+# Return bridge from trading to market_data (required for bidirectional communication)
+resource "solacebroker_msg_vpn_bridge" "trading_to_market_data_bridge" {
   count = var.enable_cross_vpn_bridge ? 1 : 0
 
-  msg_vpn_name                          = "trading-vpn"
-  bridge_name                           = "trading-to-default-bridge"
+  msg_vpn_name                          = "trading"
+  bridge_name                           = "trading-to-market_data-bridge"
   bridge_virtual_router                 = "primary"
   enabled                               = true
   max_ttl                               = 8
@@ -276,13 +274,13 @@ resource "solacebroker_msg_vpn_bridge" "trading_to_default_bridge" {
 }
 
 # Remote VPN configuration for return bridge
-resource "solacebroker_msg_vpn_bridge_remote_msg_vpn" "default_vpn_remote" {
+resource "solacebroker_msg_vpn_bridge_remote_msg_vpn" "market_data_vpn_remote" {
   count = var.enable_cross_vpn_bridge ? 1 : 0
 
-  msg_vpn_name            = "trading-vpn"
-  bridge_name             = "trading-to-default-bridge"
+  msg_vpn_name            = "trading"
+  bridge_name             = "trading-to-market_data-bridge"
   bridge_virtual_router   = "primary"
-  remote_msg_vpn_name     = "default"
+  remote_msg_vpn_name     = "market_data"
   remote_msg_vpn_location = "127.0.0.1:55555"
   enabled                 = true
   client_username         = var.bridge_username
@@ -290,7 +288,7 @@ resource "solacebroker_msg_vpn_bridge_remote_msg_vpn" "default_vpn_remote" {
   tls_enabled             = false
   queue_binding           = "cross_market_data_queue"
   
-  depends_on = [solacebroker_msg_vpn_bridge.trading_to_default_bridge, solacebroker_msg_vpn_queue.queues]
+  depends_on = [solacebroker_msg_vpn_bridge.trading_to_market_data_bridge, solacebroker_msg_vpn_queue.queues]
 }
 
 # Outputs
