@@ -1,6 +1,9 @@
 #!/bin/bash
 source scripts/load-env.sh
 
+# Configurable cycle interval (default 1 hour)
+CYCLE_INTERVAL="${QUEUE_KILLER_CYCLE_INTERVAL:-3600}"
+
 # Target queue configuration
 TARGET_QUEUE="equity_order_queue"
 TARGET_VPN="trading-vpn"
@@ -10,7 +13,7 @@ DRAIN_PIDS=""      # Track drain consumer PIDs for cleanup
 PUBLISHER_PID=""   # Track publisher PID for control
 
 while true; do
-    echo "$(date): Starting intelligent queue killer attack on ${TARGET_QUEUE}"
+    echo "$(date): Starting intelligent queue killer attack on ${TARGET_QUEUE} (cycle interval: ${CYCLE_INTERVAL}s)"
     DRAIN_PIDS=""  # Reset drain consumer tracking for new cycle
     
     # Check if queue is already full
@@ -35,24 +38,41 @@ while true; do
             wait_for_pids_to_exit $DRAIN_PIDS
         fi
         
-        echo "$(date): 💤 Queue drained, waiting 60 seconds before starting fill cycle..."
-        sleep 60
+        echo "$(date): 💤 Queue drained, waiting ${CYCLE_INTERVAL}s before starting fill cycle..."
+        sleep "$CYCLE_INTERVAL"
     fi
     
-    # Start persistent publisher in background to fill queue (very high rate to overcome active consumers)
-    echo "$(date): Starting persistent publisher to fill queue to ${FULL_THRESHOLD}%..."
+    # Start TWO high-rate publishers to overwhelm any active consumers
+    echo "$(date): Starting high-rate publishers to fill queue to ${FULL_THRESHOLD}%..."
+    
+    # Primary high-rate publisher (20k msg/sec) with large 256KB messages
     bash "${SDKPERF_SCRIPT_PATH}" \
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
         -cu="${CHAOS_GENERATOR_USER}" \
         -cp="${CHAOS_GENERATOR_PASSWORD}" \
         -ptl="trading/orders/equities/NYSE/new" \
         -mt=persistent \
-        -mr=10000 \
-        -mn=500000 \
-        -msa=5000 >> logs/queue-killer.log 2>&1 &
+        -mr=20000 \
+        -mn=1000000 \
+        -msa=262144 >> logs/queue-killer.log 2>&1 &
     
-    PUBLISHER_PID=$!
-    echo "$(date): Publisher started (PID: ${PUBLISHER_PID}), monitoring queue fill..."
+    PRIMARY_PUBLISHER_PID=$!
+    
+    # Secondary supplemental publisher (15k msg/sec) with large 256KB messages to ensure queue fills even with active consumers
+    bash "${SDKPERF_SCRIPT_PATH}" \
+        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+        -cu="${TRADE_PROCESSOR_USER}" \
+        -cp="${TRADE_PROCESSOR_PASSWORD}" \
+        -ptl="trading/orders/equities/NASDAQ/new" \
+        -mt=persistent \
+        -mr=15000 \
+        -mn=1000000 \
+        -msa=262144 >> logs/queue-killer.log 2>&1 &
+    
+    SECONDARY_PUBLISHER_PID=$!
+    PUBLISHER_PIDS="${PRIMARY_PUBLISHER_PID} ${SECONDARY_PUBLISHER_PID}"
+    
+    echo "$(date): Publishers started (PIDs: ${PRIMARY_PUBLISHER_PID}, ${SECONDARY_PUBLISHER_PID}), combined rate: 35k msg/sec"
     
     # Monitor queue until it reaches the threshold
     fill_timeout=300  # 5 minutes max to fill
@@ -63,10 +83,11 @@ while true; do
         elapsed=$((current_time - start_time))
         
         if check_queue_full "${TARGET_QUEUE}" "${TARGET_VPN}" "${FULL_THRESHOLD}"; then
-            echo "$(date): 🚨 Queue reached ${FULL_THRESHOLD}%! Stopping publisher and starting drain consumers..."
+            echo "$(date): 🚨 Queue reached ${FULL_THRESHOLD}%! Stopping publishers and starting drain consumers..."
             
-            # Stop the publisher first
-            kill ${PUBLISHER_PID} 2>/dev/null
+            # Stop both publishers first
+            kill ${PUBLISHER_PIDS} 2>/dev/null
+            echo "$(date): Stopped publishers (PIDs: ${PUBLISHER_PIDS})"
             
             # Start drain consumer - exclusive queues allow only one consumer per queue
             bash "${SDKPERF_SCRIPT_PATH}" \
@@ -74,10 +95,9 @@ while true; do
                     -cu="${ORDER_ROUTER_USER}" \
                     -cp="${ORDER_ROUTER_PASSWORD}" \
                     -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
-                DRAIN_PIDS="$! $DRAIN_PIDS"
-            done
-            
-            echo "$(date): 🔄 Started 2 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
+            DRAIN_PIDS="$!"
+        
+        echo "$(date): 🔄 Started 1 drain consumer, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
             # Wait for queue to drain to threshold
             wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}" 300
             
@@ -88,8 +108,8 @@ while true; do
                 wait_for_pids_to_exit $DRAIN_PIDS
             fi
             
-            echo "$(date): 💤 Cycle complete. Waiting 60 seconds before next attack..."
-            sleep 60
+            echo "$(date): 💤 Cycle complete. Waiting ${CYCLE_INTERVAL}s before next attack..."
+            sleep "$CYCLE_INTERVAL"
             break
             
         elif [ ${elapsed} -ge ${fill_timeout} ]; then
@@ -97,8 +117,9 @@ while true; do
             usage=$(get_queue_usage "${TARGET_QUEUE}" "${TARGET_VPN}")
             echo "$(date): Final queue usage: ${usage}%"
             
-            # Kill publisher and clean up any partial fill
-            kill ${PUBLISHER_PID} 2>/dev/null
+            # Kill publishers and clean up any partial fill
+            kill ${PUBLISHER_PIDS} 2>/dev/null
+            echo "$(date): Stopped publishers due to timeout (PIDs: ${PUBLISHER_PIDS})"
             
             if [ "$usage" -gt 10 ]; then
                 echo "$(date): Cleaning up ${usage}% partial fill..."

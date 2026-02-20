@@ -1,8 +1,12 @@
 #!/bin/bash
 source scripts/load-env.sh
 
+# Configurable attack intervals
+ATTACK_DURATION="${BRIDGE_ATTACK_DURATION:-600}"  # 10 minutes default
+SLEEP_INTERVAL="${BRIDGE_SLEEP_INTERVAL:-300}"    # 5 minutes between attacks default
+
 while true; do
-    echo "$(date): Starting cross-VPN bridge stress test"
+    echo "$(date): Starting bridge stress test (duration: ${ATTACK_DURATION}s)"
     
     # Heavy publisher on default VPN
     bash "${SDKPERF_SCRIPT_PATH}" \
@@ -33,14 +37,13 @@ while true; do
     # No need for additional SDKPerf consumers
     
     # Cross-VPN bridge consumers on trading-vpn (actual bridge testing)
-    for i in {1..2}; do
-        bash "${SDKPERF_SCRIPT_PATH}" \
-            -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
-            -cu="${ORDER_ROUTER_USER}" \
-            -cp="${ORDER_ROUTER_PASSWORD}" \
-            -sql=bridge_receive_queue \
-            -pe >> logs/bridge-killer.log 2>&1 &
-    done
+    # Start single drain consumer for exclusive queue
+    bash "${SDKPERF_SCRIPT_PATH}" \
+        -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
+        -cu="${ORDER_ROUTER_USER}" \
+        -cp="${ORDER_ROUTER_PASSWORD}" \
+        -sql=bridge_receive_queue \
+        -pe >> logs/bridge-killer.log 2>&1 &
     
     # Let it run for 10 minutes then kill
     sleep 600

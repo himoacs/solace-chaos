@@ -22,6 +22,7 @@ HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-300}  # 5 minutes (configurable v
 CONSUMER_CLEANUP_FREQUENCY=${CONSUMER_CLEANUP_FREQUENCY:-10}  # Every 10 health checks (~5 minutes)
 LOG_TRIM_FREQUENCY=${LOG_TRIM_FREQUENCY:-5}  # Every 5 health checks (~25 minutes)
 LOG_MAX_SIZE_MB=${LOG_MAX_SIZE_MB:-50}  # Trim logs larger than 50MB
+ORCHESTRATOR_SLEEP=${ORCHESTRATOR_SLEEP_INTERVAL:-30}  # Main loop sleep interval (configurable via .env)
 
 # Components to manage
 TRAFFIC_GENERATORS=(
@@ -249,7 +250,7 @@ main_orchestrator_loop() {
             log_message "Orchestrator heartbeat - loop $loop_counter, components: ${#COMPONENT_NAMES[@]} managed"
         fi
         
-        sleep 30
+        sleep "$ORCHESTRATOR_SLEEP"
     done
 }
 
