@@ -1,16 +1,14 @@
 #!/bin/bash
 
 # Load environment variables from .env file
-ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env"
+ENV_FILE="$(dirname $0)/../.env"
 
 if [ -f "$ENV_FILE" ]; then
-    # Read .env file, strip comments and empty lines, then export variables
-    while IFS= read -r line || [ -n "$line" ]; do
-        # Skip empty lines
-        [ -z "$line" ] && continue
-        # Export the variable
-        export "$line"
-    done < <(grep -v '^#' "$ENV_FILE" | grep -v '^$' | sed 's/#.*$//' | sed 's/[[:space:]]*$//')
+    # Export variables, filtering comments and empty lines
+    # Also remove inline comments and trim whitespace
+    set -a
+    source <(grep -v '^[[:space:]]*#' "$ENV_FILE" | grep -v '^[[:space:]]*$' | sed 's/#.*$//' | sed 's/[[:space:]]*$//')
+    set +a
 else
     echo "ERROR: .env file not found at $ENV_FILE"
     echo "Please run bootstrap-chaos-environment.sh first"

@@ -5,7 +5,13 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_FILE="$SCRIPT_DIR/logs/full-cleanup.log"
+
+# Load environment variables to get provisioning method
+if [ -f "$PROJECT_ROOT/.env" ]; then
+    source "$PROJECT_ROOT/.env"
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -148,10 +154,10 @@ show_summary() {
     log "$GREEN" "  ✅ All chaos testing processes stopped"
     log "$GREEN" "  ✅ Log files cleaned (with optional backup)"
     
-    if [ "$terraform_cleaned" = true ]; then
-        log "$GREEN" "  ✅ Terraform resources destroyed"
+    if [ "$infrastructure_cleaned" = true ]; then
+        log "$GREEN" "  ✅ Infrastructure resources destroyed"
     else
-        log "$YELLOW" "  ⏸️  Terraform resources preserved (use terraform-cleanup.sh separately)"
+        log "$YELLOW" "  ⏸️  Infrastructure resources preserved"
     fi
     
     log "$BLUE" "Environment is now clean and ready for fresh setup!"
@@ -167,7 +173,7 @@ main() {
     log "$YELLOW" "  1. Stop all chaos testing processes"
     log "$YELLOW" "  2. Clean up log files (with optional backup)"  
     log "$YELLOW" "  3. Optionally clean up SDKPerf extracted files"
-    log "$YELLOW" "  4. Optionally run Terraform cleanup"
+    log "$YELLOW" "  4. Optionally cleanup infrastructure resources"
     echo ""
     
     if ! confirm "Do you want to proceed with the cleanup?"; then
@@ -184,16 +190,29 @@ main() {
     # Optional SDKPerf cleanup
     cleanup_sdkperf
     
-    # Optional Terraform cleanup
-    terraform_cleaned=false
-    if confirm "Do you want to run Terraform cleanup (destroy all broker resources)?"; then
-        log "$BLUE" "Running Terraform cleanup..."
-        if [ -x "$SCRIPT_DIR/terraform-cleanup.sh" ]; then
-            "$SCRIPT_DIR/terraform-cleanup.sh"
-            terraform_cleaned=true
+    # Optional infrastructure cleanup (route based on provisioning method)
+    infrastructure_cleaned=false
+    if confirm "Do you want to cleanup infrastructure (destroy all broker resources)?"; then
+        PROVISIONING_METHOD="${PROVISIONING_METHOD:-terraform}"
+        
+        if [ "$PROVISIONING_METHOD" = "semp" ]; then
+            log "$BLUE" "Running SEMP cleanup..."
+            if [ -f "$SCRIPT_DIR/semp-provision.sh" ]; then
+                bash "$SCRIPT_DIR/semp-provision.sh" delete --force 2>&1 | tee -a "$LOG_FILE"
+                infrastructure_cleaned=true
+            else
+                log "$RED" "semp-provision.sh not found"
+                log "$YELLOW" "You may need to manually clean up broker resources via SEMP"
+            fi
         else
-            log "$RED" "terraform-cleanup.sh not found or not executable"
-            log "$YELLOW" "You can run it manually later if needed"
+            log "$BLUE" "Running Terraform cleanup..."
+            if [ -x "$SCRIPT_DIR/terraform-cleanup.sh" ]; then
+                "$SCRIPT_DIR/terraform-cleanup.sh"
+                infrastructure_cleaned=true
+            else
+                log "$RED" "terraform-cleanup.sh not found or not executable"
+                log "$YELLOW" "You can run it manually later if needed"
+            fi
         fi
     fi
     

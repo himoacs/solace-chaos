@@ -195,6 +195,54 @@ setup_project_structure() {
     return 0
 }
 
+# Step 3.5: Provisioning Method Selection
+prompt_provisioning_method() {
+    log_step "Selecting provisioning method..."
+    
+    # Check if already set in .env
+    if [ -n "$PROVISIONING_METHOD" ] && [ "$PROVISIONING_METHOD" != "auto" ]; then
+        log_success "Using provisioning method from .env: $PROVISIONING_METHOD"
+        return 0
+    fi
+    
+    echo ""
+    echo "Choose infrastructure provisioning method:"
+    echo "  1) SEMP API - Direct broker API calls (recommended, no Terraform needed)"
+    echo "  2) Terraform - Infrastructure as code (requires Terraform installation)"
+    echo ""
+    
+    read -p "Enter choice (1 or 2) [default: 1]: " choice
+    choice=${choice:-1}
+    
+    case "$choice" in
+        1) export PROVISIONING_METHOD="semp" ;;
+        2) export PROVISIONING_METHOD="terraform" ;;
+        *) 
+            log_error "Invalid choice: $choice"
+            return 1
+            ;;
+    esac
+    
+    log_success "Selected: $PROVISIONING_METHOD"
+    
+    # Offer to save to .env
+    read -p "Save this choice to .env for future runs? (y/n) [y]: " save_choice
+    save_choice=${save_choice:-y}
+    
+    if [[ "$save_choice" =~ ^[Yy] ]]; then
+        if grep -q "^PROVISIONING_METHOD=" .env 2>/dev/null; then
+            sed -i.bak "s/^PROVISIONING_METHOD=.*/PROVISIONING_METHOD=$PROVISIONING_METHOD/" .env
+        else
+            echo "" >> .env
+            echo "# Infrastructure Provisioning Method (semp | terraform)" >> .env
+            echo "PROVISIONING_METHOD=$PROVISIONING_METHOD" >> .env
+        fi
+        log_success "Saved to .env"
+    fi
+    
+    return 0
+}
+
 # Step 4: Terraform Installation and Setup
 install_terraform_if_needed() {
     log_step "Checking Terraform installation..."
@@ -473,6 +521,27 @@ deploy_infrastructure() {
     
     cd - > /dev/null
     return 0
+}
+
+# Step 6b: SEMP-based Infrastructure Deployment
+deploy_via_semp() {
+    log_step "Deploying infrastructure via SEMP API..."
+    
+    if [ ! -f "scripts/semp-provision.sh" ]; then
+        log_error "SEMP provisioning script not found: scripts/semp-provision.sh"
+        log_error "Please ensure SEMP provisioning scripts are available"
+        log_warning "You can download or create the SEMP provisioning script"
+        return 1
+    fi
+    
+    log_step "Creating Solace resources via SEMP..."
+    if bash scripts/semp-provision.sh create; then
+        log_success "SEMP provisioning completed successfully"
+        return 0
+    else
+        log_error "SEMP provisioning failed"
+        return 1
+    fi
 }
 
 # Step 7: Connectivity Validation
@@ -1434,16 +1503,52 @@ main() {
         exit 1
     fi
     
-    if ! setup_terraform; then
-        log_error "Terraform setup failed"
+    # Prompt for provisioning method
+    if ! prompt_provisioning_method; then
+        log_error "Provisioning method selection failed"
         exit 1
     fi
     
-    if [ "${SETUP_VPNS}" = "true" ]; then
-        if ! deploy_infrastructure; then
-            log_error "Infrastructure deployment failed"
+    # Setup Terraform only if using terraform method
+    if [ "$PROVISIONING_METHOD" = "terraform" ]; then
+        if ! setup_terraform; then
+            log_error "Terraform setup failed"
             exit 1
         fi
+    else
+        log_step "Skipping Terraform setup (using SEMP API)"
+    fi
+    
+    # Deploy infrastructure if requested
+    if [ "${SETUP_VPNS}" = "true" ]; then
+        if [ "$PROVISIONING_METHOD" = "semp" ]; then
+            if ! deploy_via_semp; then
+                log_error "SEMP infrastructure deployment failed"
+                exit 1
+            fi
+        else
+            if ! deploy_infrastructure; then
+                log_error "Terraform infrastructure deployment failed"
+                exit 1
+            fi
+        fi
+    else
+        log_warning "Skipping infrastructure deployment (SETUP_VPNS=false)"
+    fi
+    
+    # Verify deployment regardless of method
+    if [ "${SETUP_VPNS}" = "true" ]; then
+        log_step "Verifying deployed resources..."
+        
+        # Check VPNs exist via SEMP monitor API
+        for vpn in "${MARKET_DATA_VPN}" "${TRADING_VPN}"; do
+            if curl -s -u "${SOLACE_ADMIN_USER}:${SOLACE_ADMIN_PASSWORD}" \
+                "${SOLACE_SEMP_URL}/SEMP/v2/monitor/msgVpns/${vpn}" 2>/dev/null | grep -q '"msgVpnName"'; then
+                log_success "VPN verified: ${vpn}"
+            else
+                log_warning "VPN not found: ${vpn} (may need manual verification)"
+            fi
+        done
     fi
     
     if [ "${VALIDATE_CONNECTIVITY}" = "true" ]; then
@@ -1458,6 +1563,11 @@ main() {
     echo ""
     echo "🎉 Bootstrap completed successfully!"
     echo "=================================="
+    echo ""
+    echo "Configuration:"
+    echo "  Provisioning method: ${PROVISIONING_METHOD}"
+    echo "  Broker: ${SOLACE_BROKER_HOST}"
+    echo "  VPNs: ${MARKET_DATA_VPN}, ${TRADING_VPN}"
     echo ""
     echo "Next steps:"
     echo "  1. Review the setup log: ${BOOTSTRAP_LOG}"
