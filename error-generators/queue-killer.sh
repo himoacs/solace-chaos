@@ -6,7 +6,7 @@ TARGET_QUEUE="equity_order_queue"
 TARGET_VPN="trading"
 FULL_THRESHOLD=85  # Consider queue "full" at 85%
 DRAIN_THRESHOLD=20 # Resume attacks when below 20%
-CYCLE_WAIT_TIME=60 # Seconds to wait between attack cycles
+CYCLE_WAIT_TIME=1800 # Seconds to wait between attack cycles (30 minutes)
 DRAIN_PIDS=""      # Track drain consumer PIDs for cleanup
 PUBLISHER_PID=""   # Track publisher PID for control
 
