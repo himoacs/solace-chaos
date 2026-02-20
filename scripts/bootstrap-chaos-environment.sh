@@ -556,7 +556,8 @@ while true; do
         -stl="market-data/equities/quotes/>" \
         -mr="${CURRENT_RATE}" \
         -mn=999999999 \
-        -msa=256 >> logs/baseline-market.log 2>&1 &
+        -msa=256 \
+        -q >> logs/baseline-market.log 2>&1 &
         
     # Let it run for 1 hour then restart for rate adjustments
     sleep 3600
@@ -605,7 +606,8 @@ while true; do
         -mt=persistent \
         -mr="${CURRENT_RATE}" \
         -mn=999999999 \
-        -msa=512 >> logs/baseline-trade.log 2>&1 &
+        -msa=512 \
+        -q >> logs/baseline-trade.log 2>&1 &
     
     # Add limited queue consumers for automatic draining (prevents permanent queue buildup)
     # NOTE: Skip equity_order_queue - reserved for chaos testing (queue-killer)
@@ -620,7 +622,8 @@ while true; do
         -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
         -cu="${ORDER_ROUTER_USER}" \
         -cp="${ORDER_ROUTER_PASSWORD}" \
-        -sql="baseline_queue" >> logs/baseline-trade.log 2>&1 &
+        -sql="baseline_queue" \
+        -q >> logs/baseline-trade.log 2>&1 &
     BASELINE_CONSUMER_PID=$!
         
     # Let it run for 1 hour then restart for rate adjustments
@@ -653,6 +656,7 @@ TARGET_QUEUE="equity_order_queue"
 TARGET_VPN="trading"
 FULL_THRESHOLD=85  # Consider queue "full" at 85%
 DRAIN_THRESHOLD=20 # Resume attacks when below 20%
+CYCLE_WAIT_TIME=1800 # Seconds to wait between attack cycles (30 minutes)
 DRAIN_PIDS=""      # Track drain consumer PIDs for cleanup
 PUBLISHER_PID=""   # Track publisher PID for control
 
@@ -669,7 +673,8 @@ while true; do
                 -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
                 -cu="${ORDER_ROUTER_USER}" \
                 -cp="${ORDER_ROUTER_PASSWORD}" \
-                -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
+                -sql="${TARGET_QUEUE}" \
+                -q >> logs/queue-killer.log 2>&1 &
         DRAIN_PIDS="$!"
         
         echo "$(date): 🔄 Started 1 drain consumer, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
@@ -678,12 +683,13 @@ while true; do
         # Stop all drain consumers
         if [ -n "$DRAIN_PIDS" ]; then
             echo "$(date): ✅ Queue drained! Stopping all drain consumers..."
-            kill $DRAIN_PIDS 2>/dev/null
-            wait_for_pids_to_exit $DRAIN_PIDS
+            # Kill by pattern to ensure we catch the Java processes, not just bash wrappers
+            pkill -f "sql=${TARGET_QUEUE}" 2>/dev/null || true
+            sleep 2
         fi
         
-        echo "$(date): 💤 Queue drained, waiting 60 seconds before starting fill cycle..."
-        sleep 60
+        echo "$(date): 💤 Queue drained, waiting ${CYCLE_WAIT_TIME} seconds before starting fill cycle..."
+        sleep ${CYCLE_WAIT_TIME}
     fi
     
     # Start persistent publisher in background to fill queue (very high rate to overcome active consumers)
@@ -696,7 +702,8 @@ while true; do
         -mt=persistent \
         -mr=10000 \
         -mn=500000 \
-        -msa=5000 >> logs/queue-killer.log 2>&1 &
+        -msa=5000 \
+        -q >> logs/queue-killer.log 2>&1 &
     
     PUBLISHER_PID=$!
     echo "$(date): Publisher started (PID: ${PUBLISHER_PID}), monitoring queue fill..."
@@ -720,23 +727,24 @@ while true; do
                     -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
                     -cu="${ORDER_ROUTER_USER}" \
                     -cp="${ORDER_ROUTER_PASSWORD}" \
-                    -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
-                DRAIN_PIDS="$! $DRAIN_PIDS"
-            done
+                    -sql="${TARGET_QUEUE}" \
+                    -q >> logs/queue-killer.log 2>&1 &
+            DRAIN_PIDS="$! $DRAIN_PIDS"
             
-            echo "$(date): 🔄 Started 2 drain consumers, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
+            echo "$(date): 🔄 Started drain consumer, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
             # Wait for queue to drain to threshold
             wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" "${DRAIN_THRESHOLD}" 300
             
             # Stop all drain consumers
             if [ -n "$DRAIN_PIDS" ]; then
                 echo "$(date): ✅ Queue drained! Stopping all drain consumers..."
-                kill $DRAIN_PIDS 2>/dev/null
-                wait_for_pids_to_exit $DRAIN_PIDS
+                # Kill by pattern to ensure we catch the Java processes, not just bash wrappers
+                pkill -f "sql=${TARGET_QUEUE}" 2>/dev/null || true
+                sleep 2
             fi
             
-            echo "$(date): 💤 Cycle complete. Waiting 60 seconds before next attack..."
-            sleep 60
+            echo "$(date): 💤 Cycle complete. Waiting ${CYCLE_WAIT_TIME} seconds before next attack..."
+            sleep ${CYCLE_WAIT_TIME}
             break
             
         elif [ ${elapsed} -ge ${fill_timeout} ]; then
@@ -753,7 +761,8 @@ while true; do
                     -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
                     -cu="${ORDER_ROUTER_USER}" \
                     -cp="${ORDER_ROUTER_PASSWORD}" \
-                    -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
+                    -sql="${TARGET_QUEUE}" \
+                    -q >> logs/queue-killer.log 2>&1 &
                 DRAIN_PIDS="$!"
                 
                 wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" 5 60
