@@ -14,6 +14,9 @@ source "$SCRIPT_DIR/semp-lib.sh"
 # Track created resources for rollback
 CREATED_RESOURCES=()
 
+# Track failed operations
+FAILED_OPERATIONS=0
+
 # Cleanup on failure
 cleanup_on_failure() {
     log_semp_error "Provisioning failed! Rolling back created resources..."
@@ -54,6 +57,8 @@ EOF
     if semp_post "/SEMP/v2/config/msgVpns" "$payload" "Market Data VPN"; then
         log_semp_success "Created VPN: ${MARKET_DATA_VPN}"
         CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}")
+    else
+        ((FAILED_OPERATIONS++))
     fi
     
     # Trading VPN
@@ -75,6 +80,8 @@ EOF
     if semp_post "/SEMP/v2/config/msgVpns" "$payload" "Trading VPN"; then
         log_semp_success "Created VPN: ${TRADING_VPN}"
         CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${TRADING_VPN}")
+    else
+        ((FAILED_OPERATIONS++))
     fi
     
     # Wait for VPNs to be ready
@@ -114,6 +121,8 @@ EOF
         if semp_post "/SEMP/v2/config/msgVpns/$vpn/aclProfiles" "$payload" "ACL Profile $name"; then
             log_semp_success "Created ACL Profile: $vpn/$name"
             CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/$vpn/aclProfiles/$name")
+        else
+            ((FAILED_OPERATIONS++))
         fi
     done
 }
@@ -137,6 +146,8 @@ EOF
         if semp_post "/SEMP/v2/config/msgVpns/$vpn/clientProfiles" "$payload" "Bridge Client Profile"; then
             log_semp_success "Created Client Profile: $vpn/bridge_client_profile"
             CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/$vpn/clientProfiles/bridge_client_profile")
+        else
+            ((FAILED_OPERATIONS++))
         fi
     done
     
@@ -155,6 +166,8 @@ EOF
     if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/clientProfiles" "$payload" "Guaranteed Messaging Profile"; then
         log_semp_success "Created Client Profile: ${TRADING_VPN}/guaranteed_messaging"
         CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${TRADING_VPN}/clientProfiles/guaranteed_messaging")
+    else
+        ((FAILED_OPERATIONS++))
     fi
 }
 
@@ -178,6 +191,8 @@ EOF
     if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues" "$payload" "Queue equity_order_queue"; then
         log_semp_success "Created Queue: ${TRADING_VPN}/equity_order_queue"
         CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues/equity_order_queue")
+    else
+        ((FAILED_OPERATIONS++))
     fi
     
     # baseline_queue (trading VPN)
@@ -197,6 +212,8 @@ EOF
     if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues" "$payload" "Queue baseline_queue"; then
         log_semp_success "Created Queue: ${TRADING_VPN}/baseline_queue"
         CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues/baseline_queue")
+    else
+        ((FAILED_OPERATIONS++))
     fi
     
     # bridge_receive_queue (trading VPN)
@@ -216,6 +233,8 @@ EOF
     if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues" "$payload" "Queue bridge_receive_queue"; then
         log_semp_success "Created Queue: ${TRADING_VPN}/bridge_receive_queue"
         CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues/bridge_receive_queue")
+    else
+        ((FAILED_OPERATIONS++))
     fi
     
     # cross_market_data_queue (market_data VPN)
@@ -235,6 +254,8 @@ EOF
     if semp_post "/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}/queues" "$payload" "Queue cross_market_data_queue"; then
         log_semp_success "Created Queue: ${MARKET_DATA_VPN}/cross_market_data_queue"
         CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}/queues/cross_market_data_queue")
+    else
+        ((FAILED_OPERATIONS++))
     fi
 }
 
@@ -246,6 +267,8 @@ create_queue_subscriptions() {
     local payload="{\"subscriptionTopic\": \"$sub\"}"
     if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues/equity_order_queue/subscriptions" "$payload" "Subscription"; then
         log_semp_success "Added subscription to equity_order_queue: $sub"
+    else
+        ((FAILED_OPERATIONS++))
     fi
     
     # baseline_queue subscriptions
@@ -253,6 +276,8 @@ create_queue_subscriptions() {
     payload="{\"subscriptionTopic\": \"$sub\"}"
     if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues/baseline_queue/subscriptions" "$payload" "Subscription"; then
         log_semp_success "Added subscription to baseline_queue: $sub"
+    else
+        ((FAILED_OPERATIONS++))
     fi
     
     # bridge_receive_queue subscriptions
@@ -260,6 +285,8 @@ create_queue_subscriptions() {
     payload="{\"subscriptionTopic\": \"$sub\"}"
     if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues/bridge_receive_queue/subscriptions" "$payload" "Subscription"; then
         log_semp_success "Added subscription to bridge_receive_queue: $sub"
+    else
+        ((FAILED_OPERATIONS++))
     fi
     
     # cross_market_data_queue subscriptions
@@ -267,6 +294,8 @@ create_queue_subscriptions() {
     payload="{\"subscriptionTopic\": \"$sub\"}"
     if semp_post "/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}/queues/cross_market_data_queue/subscriptions" "$payload" "Subscription"; then
         log_semp_success "Added subscription to cross_market_data_queue: $sub"
+    else
+        ((FAILED_OPERATIONS++))
     fi
 }
 
@@ -300,6 +329,8 @@ EOF
         if semp_post "/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}/clientUsernames" "$payload" "User $username"; then
             log_semp_success "Created user: ${MARKET_DATA_VPN}/$username"
             CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}/clientUsernames/$username")
+        else
+            ((FAILED_OPERATIONS++))
         fi
     done
     
@@ -328,6 +359,8 @@ EOF
         if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/clientUsernames" "$payload" "User $username"; then
             log_semp_success "Created user: ${TRADING_VPN}/$username"
             CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${TRADING_VPN}/clientUsernames/$username")
+        else
+            ((FAILED_OPERATIONS++))
         fi
     done
 }
@@ -387,7 +420,10 @@ EOF
             semp_post "/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}/bridges/${bridge_name},${virtual_router}/remoteMsgVpns/${TRADING_VPN}/remoteSubscriptions" "$payload" "Remote Subscription" 2>/dev/null || true
         else
             log_semp_warning "Remote VPN configuration not supported in this SEMP version (bridge still created)"
+            ((FAILED_OPERATIONS++))
         fi
+    else
+        ((FAILED_OPERATIONS++))
     fi
     
     # Bridge from trading to market_data
@@ -425,7 +461,10 @@ EOF
             log_semp_success "Added remote VPN to bridge: ${MARKET_DATA_VPN}"
         else
             log_semp_warning "Remote VPN configuration not supported in this SEMP version (bridge still created)"
+            ((FAILED_OPERATIONS++))
         fi
+    else
+        ((FAILED_OPERATIONS++))
     fi
 }
 
@@ -552,6 +591,9 @@ provision_create() {
     log_semp_step "Starting SEMP provisioning (create mode)..."
     echo ""
     
+    # Reset failure counter for this run
+    FAILED_OPERATIONS=0
+    
     create_vpns
     create_acl_profiles
     create_client_profiles
@@ -561,18 +603,40 @@ provision_create() {
     create_bridges
     
     echo ""
-    log_semp_success "✅ All resources created successfully!"
-    echo ""
-    echo "Created resources:"
-    echo "  - 2 VPNs (${MARKET_DATA_VPN}, ${TRADING_VPN})"
-    echo "  - 10 ACL Profiles"
-    echo "  - 3 Client Profiles"
-    echo "  - 4 Queues with subscriptions"
-    echo "  - 10 Client Usernames"
-    if [ "${ENABLE_CROSS_VPN_BRIDGE}" = "true" ]; then
-        echo "  - 2 Cross-VPN Bridges"
+    if [ $FAILED_OPERATIONS -eq 0 ]; then
+        log_semp_success "✅ All resources created successfully!"
+        echo ""
+        echo "Created resources:"
+        echo "  - 2 VPNs (${MARKET_DATA_VPN}, ${TRADING_VPN})"
+        echo "  - 10 ACL Profiles"
+        echo "  - 3 Client Profiles"
+        echo "  - 4 Queues with subscriptions"
+        echo "  - 10 Client Usernames"
+        if [ "${ENABLE_CROSS_VPN_BRIDGE}" = "true" ]; then
+            echo "  - 2 Cross-VPN Bridges"
+        fi
+        echo ""
+    else
+        log_semp_error "❌ Provisioning failed with $FAILED_OPERATIONS errors!"
+        echo ""
+        echo "Common causes:"
+        echo "  1. Insufficient permissions - The admin user needs 'admin' or 'read-write' access level"
+        echo "  2. On hardware brokers, the user must have proper authorization:"
+        echo "     - Check CLI: show client-username <username> authorization access-level"
+        echo "     - Should be 'admin' for full provisioning"
+        echo "  3. VPNs may already exist - Use 'verify' command to check"
+        echo ""
+        echo "To fix authorization on hardware broker:"
+        echo "  enable"
+        echo "  configure"
+        echo "  client-username ${SOLACE_ADMIN_USER}"
+        echo "    authorization"
+        echo "      access-level admin"
+        echo "    exit"
+        echo "  end"
+        echo ""
+        return 1
     fi
-    echo ""
 }
 
 provision_delete() {
