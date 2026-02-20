@@ -53,9 +53,15 @@ while true; do
         -sql="baseline_queue" >> logs/baseline-trade.log 2>&1 &
     BASELINE_CONSUMER_PID=$!
         
-    # Let it run for configured interval then restart for rate adjustments
-    local restart_interval="${TRAFFIC_RESTART_INTERVAL:-3600}"
-    sleep "$restart_interval"
+    # Let it run for 1 hour then restart for rate adjustments
+    sleep 3600
+    
+    # Kill processes by PID to ensure cleanup
+    pkill -f "trading/orders/equities" 2>/dev/null
+    [ -n "$EQUITY_CONSUMER_PID" ] && kill $EQUITY_CONSUMER_PID 2>/dev/null
+    [ -n "$BASELINE_CONSUMER_PID" ] && kill $BASELINE_CONSUMER_PID 2>/dev/null
+    
+    # Wait a moment for cleanup
     sleep 2
     
     echo "$(date): Baseline trade flow cycle completed - restarting for rate check"

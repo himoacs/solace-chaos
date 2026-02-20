@@ -42,37 +42,37 @@ resource "solacebroker_msg_vpn_acl_profile" "acl_profiles" {
   for_each = {
     # Market Data VPN profiles
     "market_data_publisher" = {
-      vpn = "market_data"
+      vpn = var.vpns["market_data"].name
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
     }
     "market_data_subscriber" = {
-      vpn = "market_data"
+      vpn = var.vpns["market_data"].name
       connect_action = "allow"
       publish_action = "disallow"
       subscribe_action = "allow"
     }
     "risk_management" = {
-      vpn = "market_data"
+      vpn = var.vpns["market_data"].name
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
     }
     "integration_service" = {
-      vpn = "market_data"
+      vpn = var.vpns["market_data"].name
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
     }
     "restricted_market_access" = {
-      vpn = "market_data"
+      vpn = var.vpns["market_data"].name
       connect_action = "allow"
       publish_action = "disallow"
       subscribe_action = "disallow"
     }
     "bridge_access_market_data" = {
-      vpn = "market_data"
+      vpn = var.vpns["market_data"].name
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
@@ -80,25 +80,25 @@ resource "solacebroker_msg_vpn_acl_profile" "acl_profiles" {
     
     # Trading VPN profiles
     "trade_processor" = {
-      vpn = "trading"
+      vpn = var.vpns["trading"].name
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
     }
     "chaos_testing" = {
-      vpn = "trading"
+      vpn = var.vpns["trading"].name
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
     }
     "restricted_trade_access" = {
-      vpn = "trading"
+      vpn = var.vpns["trading"].name
       connect_action = "allow"
       publish_action = "disallow"
       subscribe_action = "disallow"
     }
     "bridge_access" = {
-      vpn = "trading"
+      vpn = var.vpns["trading"].name
       connect_action = "allow"
       publish_action = "allow"
       subscribe_action = "allow"
@@ -165,7 +165,7 @@ resource "solacebroker_msg_vpn_queue_subscription" "all_subscriptions" {
 
 # Create client profiles for bridge connections
 resource "solacebroker_msg_vpn_client_profile" "bridge_client_profile_market_data" {
-  msg_vpn_name                    = "market_data"
+  msg_vpn_name                    = var.vpns["market_data"].name
   client_profile_name             = "bridge_client_profile"
   allow_bridge_connections_enabled = true
   allow_guaranteed_endpoint_create_enabled = true
@@ -176,7 +176,7 @@ resource "solacebroker_msg_vpn_client_profile" "bridge_client_profile_market_dat
 }
 
 resource "solacebroker_msg_vpn_client_profile" "bridge_client_profile_trading" {
-  msg_vpn_name                    = "trading"
+  msg_vpn_name                    = var.vpns["trading"].name
   client_profile_name             = "bridge_client_profile"
   allow_bridge_connections_enabled = true
   allow_guaranteed_endpoint_create_enabled = true
@@ -188,7 +188,7 @@ resource "solacebroker_msg_vpn_client_profile" "bridge_client_profile_trading" {
 
 # Create client profile for guaranteed messaging in trading VPN
 resource "solacebroker_msg_vpn_client_profile" "guaranteed_messaging_profile" {
-  msg_vpn_name                    = "trading"
+  msg_vpn_name                    = var.vpns["trading"].name
   client_profile_name             = "guaranteed_messaging"
   allow_bridge_connections_enabled = false
   allow_guaranteed_endpoint_create_enabled = true
@@ -216,7 +216,7 @@ resource "solacebroker_msg_vpn_client_username" "users" {
 resource "solacebroker_msg_vpn_bridge" "market_data_to_trading_bridge" {
   count = var.enable_cross_vpn_bridge ? 1 : 0
 
-  msg_vpn_name                          = "market_data"
+  msg_vpn_name                          = var.vpns["market_data"].name
   bridge_name                           = "market_data-to-trading-bridge"
   bridge_virtual_router                 = "primary"
   enabled                               = true
@@ -231,10 +231,10 @@ resource "solacebroker_msg_vpn_bridge" "market_data_to_trading_bridge" {
 resource "solacebroker_msg_vpn_bridge_remote_msg_vpn" "trading_vpn_remote" {
   count = var.enable_cross_vpn_bridge ? 1 : 0
 
-  msg_vpn_name            = "market_data"
+  msg_vpn_name            = var.vpns["market_data"].name
   bridge_name             = "market_data-to-trading-bridge"
   bridge_virtual_router   = "primary"
-  remote_msg_vpn_name     = "trading"
+  remote_msg_vpn_name     = var.vpns["trading"].name
   remote_msg_vpn_location = "127.0.0.1:55555"
   enabled                 = true
   client_username         = var.bridge_username
@@ -249,7 +249,7 @@ resource "solacebroker_msg_vpn_bridge_remote_msg_vpn" "trading_vpn_remote" {
 resource "solacebroker_msg_vpn_bridge_remote_subscription" "bridge_stress_subscription" {
   count = var.enable_cross_vpn_bridge ? 1 : 0
 
-  msg_vpn_name              = "market_data"
+  msg_vpn_name              = var.vpns["market_data"].name
   bridge_name               = "market_data-to-trading-bridge"
   bridge_virtual_router     = "primary"
   remote_subscription_topic = "market-data/bridge-stress/>"
@@ -262,7 +262,7 @@ resource "solacebroker_msg_vpn_bridge_remote_subscription" "bridge_stress_subscr
 resource "solacebroker_msg_vpn_bridge" "trading_to_market_data_bridge" {
   count = var.enable_cross_vpn_bridge ? 1 : 0
 
-  msg_vpn_name                          = "trading"
+  msg_vpn_name                          = var.vpns["trading"].name
   bridge_name                           = "trading-to-market_data-bridge"
   bridge_virtual_router                 = "primary"
   enabled                               = true
@@ -277,10 +277,10 @@ resource "solacebroker_msg_vpn_bridge" "trading_to_market_data_bridge" {
 resource "solacebroker_msg_vpn_bridge_remote_msg_vpn" "market_data_vpn_remote" {
   count = var.enable_cross_vpn_bridge ? 1 : 0
 
-  msg_vpn_name            = "trading"
+  msg_vpn_name            = var.vpns["trading"].name
   bridge_name             = "trading-to-market_data-bridge"
   bridge_virtual_router   = "primary"
-  remote_msg_vpn_name     = "market_data"
+  remote_msg_vpn_name     = var.vpns["market_data"].name
   remote_msg_vpn_location = "127.0.0.1:55555"
   enabled                 = true
   client_username         = var.bridge_username

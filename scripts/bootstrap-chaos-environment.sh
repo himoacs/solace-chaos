@@ -397,12 +397,24 @@ vpn_users = {
     password = "${INTEGRATION_PASSWORD}"
     acl_profile = "integration_service"
   }
+  "bridge_user" = {
+    vpn = "${TRADING_VPN}"
+    username = "bridge-user"
+    password = "bridge_pass"
+    acl_profile = "bridge_access"
+  }
+  "bridge_user_market_data" = {
+    vpn = "${MARKET_DATA_VPN}"
+    username = "bridge-user"
+    password = "bridge_pass"
+    acl_profile = "bridge_access_market_data"
+  }
 }
 
 # Bridge Configuration
 enable_cross_vpn_bridge = ${ENABLE_CROSS_VPN_BRIDGE}
-bridge_username = "admin"
-bridge_password = "admin"
+bridge_username = "bridge-user"
+bridge_password = "bridge_pass"
 bridges = {}
 EOF
     

@@ -35,9 +35,8 @@ while true; do
         -mn=999999999 \
         -msa=256 >> logs/baseline-market.log 2>&1 &
         
-    # Let it run for configured interval then restart for rate adjustments
-    local restart_interval="${TRAFFIC_RESTART_INTERVAL:-3600}"
-    sleep "$restart_interval"
+    # Let it run for 1 hour then restart for rate adjustments
+    sleep 3600
     pkill -f "market-data/equities/quotes" 2>/dev/null
     
     echo "$(date): Baseline market data cycle completed - restarting for rate check"

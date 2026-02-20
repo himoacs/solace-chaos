@@ -1,11 +1,16 @@
 #!/bin/bash
 
 # Load environment variables from .env file
-ENV_FILE="$(dirname $0)/../.env"
+ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env"
 
 if [ -f "$ENV_FILE" ]; then
-    # Strip inline comments and empty lines before exporting
-    export $(cat "$ENV_FILE" | grep -v '^#' | sed 's/#.*$//' | grep -v '^\s*$' | xargs)
+    # Read .env file, strip comments and empty lines, then export variables
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Skip empty lines
+        [ -z "$line" ] && continue
+        # Export the variable
+        export "$line"
+    done < <(grep -v '^#' "$ENV_FILE" | grep -v '^$' | sed 's/#.*$//' | sed 's/[[:space:]]*$//')
 else
     echo "ERROR: .env file not found at $ENV_FILE"
     echo "Please run bootstrap-chaos-environment.sh first"
@@ -32,39 +37,6 @@ done
 
 # SEMP API configuration
 SOLACE_SEMP_URL="http://${SOLACE_BROKER_HOST}:8080"
-
-# Broker Type Detection Function
-detect_broker_type() {
-    # Check if manual override is set
-    if [ "$SOLACE_BROKER_TYPE" = "software" ] || [ "$SOLACE_BROKER_TYPE" = "appliance" ]; then
-        echo "$SOLACE_BROKER_TYPE"
-        return 0
-    fi
-    
-    # Auto-detect via SEMP API (query /SEMP/v2/about endpoint)
-    local response=$(curl -s -u "${SOLACE_ADMIN_USER}:${SOLACE_ADMIN_PASSWORD}" \
-        "${SOLACE_SEMP_URL}/SEMP/v2/about" 2>/dev/null)
-    
-    if [ $? -eq 0 ] && [ ! -z "$response" ]; then
-        # Check for platform field - appliances identify as "Appliance"
-        local platform=$(echo "$response" | grep -o '"platform":"[^"]*"' | cut -d'"' -f4)
-        
-        if echo "$platform" | grep -iq "appliance"; then
-            echo "appliance"
-            return 0
-        else
-            echo "software"
-            return 0
-        fi
-    fi
-    
-    # Fallback to software if detection fails
-    echo "software"
-    return 1
-}
-
-# Detect and export broker type
-export DETECTED_BROKER_TYPE=$(detect_broker_type)
 
 # SEMP API Helper Functions
 get_queue_usage() {

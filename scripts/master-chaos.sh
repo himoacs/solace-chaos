@@ -20,9 +20,6 @@ NC='\033[0m'
 MASTER_LOG="scripts/logs/master-chaos-$(date +%Y%m%d_%H%M%S).log"
 HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-300}  # 5 minutes (configurable via .env)
 CONSUMER_CLEANUP_FREQUENCY=${CONSUMER_CLEANUP_FREQUENCY:-10}  # Every 10 health checks (~5 minutes)
-LOG_TRIM_FREQUENCY=${LOG_TRIM_FREQUENCY:-5}  # Every 5 health checks (~25 minutes)
-LOG_MAX_SIZE_MB=${LOG_MAX_SIZE_MB:-50}  # Trim logs larger than 50MB
-ORCHESTRATOR_SLEEP=${ORCHESTRATOR_SLEEP_INTERVAL:-30}  # Main loop sleep interval (configurable via .env)
 
 # Components to manage
 TRAFFIC_GENERATORS=(
@@ -77,49 +74,6 @@ log_error() {
     local message="$1"
     echo -e "${RED}❌ ${message}${NC}"
     echo "ERROR: ${message}" >> "$MASTER_LOG"
-}
-
-trim_log_files() {
-    local max_size_bytes=$((LOG_MAX_SIZE_MB * 1024 * 1024))
-    local trimmed_count=0
-    
-    log_message "Checking log files for trimming (max size: ${LOG_MAX_SIZE_MB}MB)"
-    
-    # Find all log files in logs/ and scripts/logs/
-    for log_dir in "logs" "scripts/logs"; do
-        if [ ! -d "$log_dir" ]; then
-            continue
-        fi
-        
-        find "$log_dir" -type f -name "*.log" 2>/dev/null | while read -r logfile; do
-            if [ ! -f "$logfile" ]; then
-                continue
-            fi
-            
-            local filesize=$(stat -f%z "$logfile" 2>/dev/null || stat -c%s "$logfile" 2>/dev/null || echo 0)
-            
-            if [ "$filesize" -gt "$max_size_bytes" ]; then
-                local size_mb=$((filesize / 1024 / 1024))
-                log_warning "Trimming $(basename $logfile) (${size_mb}MB > ${LOG_MAX_SIZE_MB}MB)"
-                
-                # Keep last 10000 lines and overwrite the file
-                tail -n 10000 "$logfile" > "${logfile}.tmp" 2>/dev/null
-                mv "${logfile}.tmp" "$logfile" 2>/dev/null
-                
-                trimmed_count=$((trimmed_count + 1))
-                
-                local new_size=$(stat -f%z "$logfile" 2>/dev/null || stat -c%s "$logfile" 2>/dev/null || echo 0)
-                local new_size_mb=$((new_size / 1024 / 1024))
-                log_success "Trimmed $(basename $logfile) to ${new_size_mb}MB"
-            fi
-        done
-    done
-    
-    if [ "$trimmed_count" -eq 0 ]; then
-        log_message "No log files require trimming"
-    else
-        log_success "Trimmed $trimmed_count log file(s)"
-    fi
 }
 
 start_component() {
@@ -233,11 +187,6 @@ main_orchestrator_loop() {
                 log_success "Consumer cleanup completed"
             fi
             
-            # Run periodic log trimming every N health checks
-            if (( loop_counter % LOG_TRIM_FREQUENCY == 0 )); then
-                trim_log_files
-            fi
-            
             for component in "${TRAFFIC_GENERATORS[@]}" "${ERROR_GENERATORS[@]}"; do
                 check_component_health "$component"
             done
@@ -250,7 +199,7 @@ main_orchestrator_loop() {
             log_message "Orchestrator heartbeat - loop $loop_counter, components: ${#COMPONENT_NAMES[@]} managed"
         fi
         
-        sleep "$ORCHESTRATOR_SLEEP"
+        sleep 30
     done
 }
 
