@@ -18,18 +18,18 @@ NC='\033[0m' # No Color
 mkdir -p scripts/logs
 BOOTSTRAP_LOG="$PROJECT_ROOT/scripts/logs/bootstrap-$(date +%Y%m%d_%H%M%S).log"
 
-# Function to clean up old log files (older than 24 hours)
+# Function to clean up old log files (older than 6 hours)
 cleanup_old_logs() {
-    echo "$(date): 🧹 Cleaning up log files older than 24 hours..." | tee -a "$BOOTSTRAP_LOG"
+    echo "$(date): 🧹 Cleaning up log files older than 6 hours..." | tee -a "$BOOTSTRAP_LOG"
     
-    # Clean main logs directory (files older than 1440 minutes = 24 hours)
+    # Clean main logs directory (files older than 360 minutes = 6 hours)
     local cleaned=0
-    cleaned=$(find "logs" -name "*.log" -type f -mmin +1440 -print -exec rm -f {} \; 2>/dev/null | wc -l)
+    cleaned=$(find "logs" -name "*.log" -type f -mmin +360 -print -exec rm -f {} \; 2>/dev/null | wc -l)
     
     # Clean scripts/logs directory  
     local scripts_cleaned=0
-    scripts_cleaned=$(find "scripts/logs" -name "*.log" -type f -mmin +1440 -print -exec rm -f {} \; 2>/dev/null | wc -l)
-    scripts_cleaned=$((scripts_cleaned + $(find "scripts/logs" -name "*.start" -type f -mmin +1440 -print -exec rm -f {} \; 2>/dev/null | wc -l)))
+    scripts_cleaned=$(find "scripts/logs" -name "*.log" -type f -mmin +360 -print -exec rm -f {} \; 2>/dev/null | wc -l)
+    scripts_cleaned=$((scripts_cleaned + $(find "scripts/logs" -name "*.start" -type f -mmin +360 -print -exec rm -f {} \; 2>/dev/null | wc -l)))
     
     # Clean old log backups (older than 7 days)
     local backups_cleaned=0

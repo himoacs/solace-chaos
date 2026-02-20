@@ -33,7 +33,8 @@ while true; do
         -stl="market-data/equities/quotes/>" \
         -mr="${CURRENT_RATE}" \
         -mn=999999999 \
-        -msa=256 >> logs/baseline-market.log 2>&1 &
+        -msa=256 \
+        -q >> logs/baseline-market.log 2>&1 &
         
     # Let it run for 1 hour then restart for rate adjustments
     sleep 3600

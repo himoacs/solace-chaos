@@ -6,7 +6,7 @@ TARGET_QUEUE="equity_order_queue"
 TARGET_VPN="trading"
 FULL_THRESHOLD=85  # Consider queue "full" at 85%
 DRAIN_THRESHOLD=20 # Resume attacks when below 20%
-CYCLE_WAIT_TIME=3600 # Seconds to wait between attack cycles
+CYCLE_WAIT_TIME=60 # Seconds to wait between attack cycles
 DRAIN_PIDS=""      # Track drain consumer PIDs for cleanup
 PUBLISHER_PID=""   # Track publisher PID for control
 
@@ -23,7 +23,8 @@ while true; do
                 -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
                 -cu="${ORDER_ROUTER_USER}" \
                 -cp="${ORDER_ROUTER_PASSWORD}" \
-                -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
+                -sql="${TARGET_QUEUE}" \
+                -q >> logs/queue-killer.log 2>&1 &
         DRAIN_PIDS="$!"
         
         echo "$(date): 🔄 Started 1 drain consumer, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
@@ -51,7 +52,8 @@ while true; do
         -mt=persistent \
         -mr=10000 \
         -mn=500000 \
-        -msa=5000 >> logs/queue-killer.log 2>&1 &
+        -msa=5000 \
+        -q >> logs/queue-killer.log 2>&1 &
     
     PUBLISHER_PID=$!
     echo "$(date): Publisher started (PID: ${PUBLISHER_PID}), monitoring queue fill..."
@@ -75,7 +77,8 @@ while true; do
                     -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
                     -cu="${ORDER_ROUTER_USER}" \
                     -cp="${ORDER_ROUTER_PASSWORD}" \
-                    -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
+                    -sql="${TARGET_QUEUE}" \
+                    -q >> logs/queue-killer.log 2>&1 &
             DRAIN_PIDS="$! $DRAIN_PIDS"
             
             echo "$(date): 🔄 Started drain consumer, waiting for queue to drop to ${DRAIN_THRESHOLD}%..."
@@ -108,7 +111,8 @@ while true; do
                     -cip="${SOLACE_BROKER_HOST}:${SOLACE_BROKER_PORT}" \
                     -cu="${ORDER_ROUTER_USER}" \
                     -cp="${ORDER_ROUTER_PASSWORD}" \
-                    -sql="${TARGET_QUEUE}" >> logs/queue-killer.log 2>&1 &
+                    -sql="${TARGET_QUEUE}" \
+                    -q >> logs/queue-killer.log 2>&1 &
                 DRAIN_PIDS="$!"
                 
                 wait_for_queue_to_drain "${TARGET_QUEUE}" "${TARGET_VPN}" 5 60
