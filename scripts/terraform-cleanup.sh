@@ -6,7 +6,13 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-TERRAFORM_DIR="${PROJECT_ROOT}/terraform/environments/base"
+
+# Load environment to detect broker type
+source "${SCRIPT_DIR}/load-env.sh" 2>/dev/null || true
+
+# Determine broker type and set Terraform directory
+BROKER_TYPE="${DETECTED_BROKER_TYPE:-software}"
+TERRAFORM_DIR="${PROJECT_ROOT}/terraform/environments/${BROKER_TYPE}"
 LOG_FILE="${SCRIPT_DIR}/logs/terraform-cleanup.log"
 
 # Colors for output
@@ -40,6 +46,9 @@ confirm() {
 
 # Function to check if Terraform is initialized
 check_terraform_init() {
+    log "$BLUE" "Using Terraform configuration for broker type: ${BROKER_TYPE}"
+    log "$BLUE" "Terraform directory: ${TERRAFORM_DIR}"
+    
     if [ ! -d "$TERRAFORM_DIR/.terraform" ]; then
         log "$RED" "ERROR: Terraform not initialized in $TERRAFORM_DIR"
         log "$YELLOW" "Run './scripts/bootstrap-chaos-environment.sh' first to initialize Terraform"

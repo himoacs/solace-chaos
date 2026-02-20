@@ -179,6 +179,8 @@ setup_project_structure() {
         "traffic-generators"
         "error-generators"
         "terraform/environments/base"
+        "terraform/environments/software"
+        "terraform/environments/appliance"
         "terraform/modules/vpn"
         "terraform/modules/queue"
         "terraform/modules/user"
@@ -285,7 +287,14 @@ setup_terraform() {
         return 1
     fi
     
-    cd terraform/environments/base || return 1
+    # Determine broker type (detected or manual)
+    local broker_type="${DETECTED_BROKER_TYPE:-software}"
+    local terraform_dir="terraform/environments/${broker_type}"
+    
+    log_step "Detected broker type: ${broker_type}"
+    log_step "Using Terraform config: ${terraform_dir}"
+    
+    cd "${terraform_dir}" || return 1
     
     # Initialize Terraform (safe to run multiple times)
     if terraform init; then
@@ -416,7 +425,11 @@ EOF
 deploy_infrastructure() {
     log_step "Deploying Solace infrastructure..."
     
-    cd terraform/environments/base || return 1
+    # Determine broker type for deployment
+    local broker_type="${DETECTED_BROKER_TYPE:-software}"
+    local terraform_dir="terraform/environments/${broker_type}"
+    
+    cd "${terraform_dir}" || return 1
     
     # Plan the deployment
     log_step "Planning infrastructure deployment..."
@@ -441,7 +454,7 @@ deploy_infrastructure() {
     else
         echo ""
         echo "Ready to deploy infrastructure. Run the following to proceed:"
-        echo "  cd terraform/environments/base"
+        echo "  cd terraform/environments/${broker_type:-software}"
         echo "  terraform apply tfplan"
         echo ""
     fi
