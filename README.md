@@ -1,122 +1,204 @@
 # Solace Chaos Testing Environment
 
-A comprehensive chaos testing framework for Solace PubSub+ brokers, designed for capital markets scenarios with multi-VPN architecture and optimized for queue buildup testing.
+A comprehensive chaos testing framework for Solace PubSub+ brokers, designed for capital markets scenarios with multi-VPN architecture and optimized for realistic load testing.
 
 ## Features
 
-- **Two-VPN Architecture**: market_data and trading (both newly created)  
-- **Optimized Queue Buildup**: Exclusive queues with high-rate publishers for realistic backlog testing
-- **Realistic Error Generation**: Queue overflow, ACL violations, connection limits, cross-VPN bridge failures  
+- **Two-VPN Architecture**: market_data and trading with cross-VPN bridge
+- **SEMP API Provisioning**: Direct API-based infrastructure setup (no Terraform required)
+- **Unified Orchestrator**: Single run-chaos.sh manages all components
+- **Realistic Traffic Patterns**: Market data feeds and trade flow simulation
+- **Error Generation**: Queue overflow, ACL violations, connection storms, bridge stress
 - **Capital Markets Focus**: Market data distribution and trade order processing scenarios
-- **Continuous Operation**: Auto-restarting publishers for low-touch long-running tests
+- **Auto-Restart**: Self-healing components with automatic restarts
 - **Weekend-Aware**: Automatically reduces activity on weekends like real markets
-- **Long-Running**: Designed for continuous operation with minimal maintenance
-- **Infrastructure as Code**: Complete Terraform automation with exclusive queue configuration
-- **Single Command Setup**: One script sets up everything
+- **VMR Compatible**: Works with free Solace PubSub+ Standard (with guidance for production brokers)
 
 ## Quick Start
 
 1. **Download SDKPerf**:
    - Visit https://docs.solace.com/API/SDKPerf/Command-Line-Options.htm
-   - Download `sdkperf-jcsmp-X.X.X.X.zip` 
+   - Download `sdkperf-jcsmp-8.4.19.7.zip` (or latest version)
    - Place the ZIP file in `sdkperf-tools/` directory
+   - Run bootstrap script to auto-extract: `./scripts/bootstrap-chaos-environment.sh`
 
-2. **Clone and configure**:
+2. **Configure environment**:
    ```bash
    cd solace-chaos
    cp .env.template .env
-   # Edit .env with your Solace broker details
+   # Edit .env with your Solace broker connection details:
+   # - SOLACE_BROKER_HOST (default: localhost)
+   # - SOLACE_BROKER_PORT (default: 55554)  
+   # - SOLACE_SEMP_HOST (default: localhost)
+   # - SOLACE_SEMP_PORT (default: 8080)
    ```
 
-3. **Bootstrap everything**:
+3. **Provision infrastructure** (VPNs, queues, users, bridges):
    ```bash
-   ./bootstrap-chaos-environment.sh
+   ./scripts/semp-provision.sh create
    ```
 
 4. **Start chaos testing**:
    ```bash
-   ./scripts/master-chaos.sh
+   bash run-chaos.sh &
    ```
 
-5. **Start continuous high-rate publishing** (for queue buildup):
-   ```bash
-   ./scripts/continuous-publisher.sh
-   ```
-
-That's it! The system will run continuously generating various error conditions and maintaining message backlog.
+That's it! The system will run continuously generating realistic traffic and various error conditions.
 
 ## Architecture
 
+### Components
+**Orchestrator**: `run-chaos.sh`
+- Single unified orchestrator managing all components
+- Health monitoring with automatic restarts
+- Graceful shutdown handling
+- Centralized logging
+
+**Traffic Generators**: (2 modes via `traffic-generator.sh`)
+- **market-data**: Publishes stock quotes to market_data VPN (2K msg/sec, 256 bytes)
+- **trade-flow**: Sends orders to trading VPN queues with drain consumers
+
+**Chaos Generators**: (4 scenarios via `chaos-generator.sh`)
+- **queue-killer**: Floods queues to test overflow behavior
+- **acl-violation**: Attempts unauthorized topic access
+- **connection-storm**: Creates rapid connection/disconnection cycles
+- **bridge-stress**: High-volume bridge stress testing (5K msg/sec, 10KB messages)
+
 ### VPNs
-- **market_data**: Market data, integration, and risk management
-- **trading**: Order processing and settlement
+- **market_data**: Market data feeds, bridge source
+- **trading**: Order processing, bridge destination
 
 ### Queue Configuration
-- **5 Active Queues**: Complete multi-VPN queue architecture for comprehensive testing
-  - **trading**: `equity_order_queue`, `baseline_queue`, `bridge_receive_queue` 
-  - **market_data**: `cross_market_data_queue`
-- **Exclusive Access**: Prevents zombie consumers and ensures single consumer per queue
-- **Optimized Quotas**: 50-150MB quotas designed for realistic backlog testing with fast queue fill capabilities
-- **Non-Persistent Messages**: Optimized for high throughput (8k+ msg/sec)
+- **4 Queues** across both VPNs:
+  - **trading**: `equity_order_queue` (50 MB), `baseline_queue` (80 MB), `bridge_receive_queue` (120 MB)
+  - **market_data**: `cross_market_data_queue` (150 MB)
+- **Exclusive Access**: Single consumer per queue
+- **Cross-VPN Bridge**: Forwards bridge-stress traffic from market_data to trading
 
-### Error Scenarios
-- **Queue Buildup**: Dual high-rate publishers (35k msg/sec combined, 256KB messages) overwhelm consumers for rapid realistic backlog
-- **Queue Full**: Reduced quotas (50MB for equity_order_queue) that fill quickly to 85% threshold, cycles every hour
-- **ACL Violations**: Restricted users trying to access forbidden topics
-- **Connection Limits**: Connection storms hitting VPN limits
-- **Cross-VPN Bridge**: Bridge stress testing between VPNs
+### SDKPerf Configuration
+**Important**: This chaos framework uses **direct messaging** (topic publishing with `-ptl`) which works with all client profiles including the default profile.
+# Check orchestrator and component status
+tail -f logs/chaos-orchestrator.log
 
-### Traffic Patterns
-- **High-Rate Publishing**: 35k msg/sec with dual publishers (20k + 15k) and 256KB messages for rapid queue buildup
-- **Continuous Publishers**: Auto-restarting publishers for unattended operation
-- **Single Consumers**: One consumer per queue to maintain backlog
-- **Weekend-Aware**: Automatically reduces rates on weekends (realistic market simulation)
-- **Baseline**: Continuous health validation traffic
+# Check Java SDKPerf processes  
+ps aux | grep "java.*sdkperf" | grep -v grep
 
-## Monitoring
+# Check connected clients on broker
+curl -s -u admin:admin 'http://localhost:8080/SEMP/v2/monitor/msgVpns/market_data/clients'
 
-Check system status:
-```bash
-./scripts/status-check.sh              # Overall system status
-./scripts/queue-manager.sh status      # Queue status and message counts
+# Check queue statistics
+curl -s -u admin:admin 'http://localhost:8080/SEMP/v2/monitor/msgVpns/trading/queues'
 ```
 
-View queue details:
+View component logs:
 ```bash
-./scripts/queue-manager.sh status      # Shows message counts and quota usage
-./scripts/queue-manager.sh clear       # Clear all queue messages (if needed)
+tail -f logs/chaos-orchestrator.log      # Main orchestrator
+tail -f logs/market-data-traffic.log     # Market data SDKPerf output
+tail -f logs/trade-flow-traffic.log      # Trade flow SDKPerf output
+tail -f logs/queue-killer-chaos.log      # Queue killer chaos generator
+tail -f logs/acl-violation-chaos.log     # ACL violation attempts
+tail -f logs/connection-storm-chaos.log  # Connection storm tests
+tail -f logs/bridge-stress-chaos.log     # Bridge stress testing
+``` using declarative definitions:
+
+**Infrastructure Definitions**:
+- `VPN_*`: Message VPN configurations
+- `QUEUE_*`: Queue names, VPNs, quotas, access types, subscriptions
+- `USER_*`: Client usernames with roles, VPNs, passwords, ACL/client profiles
+- `ACL_*`: ACL profile rules (connect, publish, subscribe permissions)
+
+**Runtime Settings**:
+- Broker connection details (host, ports)
+- SEMP API credentials  
+- Traffic rates (weekday vs weekend)
+- Restart intervals
+
+**Example Queue Definition**:
+```bash
+# Format: "name,vpn,quota_mb,access_type,subscriptions"
+QUEUE_1="equity_order_queue,trading,50,exclusive,trading/orders/equities/>"
 ```
 
-View logs:
+**Example User Definition**:
 ```bash
-tail -f logs/master-chaos-*.log          # Master orchestrator
-tail -f logs/queue-killer.log            # Queue overflow attempts
-tail -f logs/acl-violator.log           # ACL violation attempts
-tail -f logs/connection-bomber.log       # Connection limit tests
-tail -f logs/baseline-market.log         # Baseline market data
-tail -f logs/continuous-publisher.log    # High-rate continuous publisher
+# Format: "role,vpn,password,acl_profile,client_profile"
+USER_1="market-feed,market_data,market_feed_pass,market_data_publisher,default"
 ```
 
-## Configuration
+## Infrastructure Management
 
-All configuration is in `.env` file:
-- Broker connection details
-- User credentials for each VPN
-- Rate limits and quotas
-- Weekend vs weekday behavior
+### SEMP Provisioning
 
-## Infrastructure
+All infrastructure is managed via SEMP API v2:
+Unified Orchestrator
+The main orchestrator manages all components:
 
-Terraform manages:
-- VPN creation and configuration
-- **5 optimized queues** with exclusive access across both VPNs
-- User accounts with proper ACL profiles
-- Cross-VPN bridges (optional)
-
-Queue configuration uses **exclusive access type** to prevent zombie consumers and ensure single consumer per queue for reliable backlog testing.
-
-To modify infrastructure:
+**Start chaos testing**:
 ```bash
+bash run-chaos.sh &
+```
+
+**Check status**:
+```bash
+# Check orchestrator log
+tail -f logs/chaos-orchestrator.log
+
+# Check all running components
+ps aux | grep -E "(traffic-generator|chaos-generator|sdkperf)" | grep -v grep
+```
+
+**Stop everything**:
+```bash
+pkill -9 -f "run-chaos"; pkill -9 -f "traffic-generator"; pkill -9 -f "chaos-generator"; pkill -9 sdkperf
+```
+
+### Component Architecture
+
+**Orchestrator** (`run-chaos.sh`):
+- Launches 2 traffic generators + 4 chaos generators
+- Monitors health every 60 seconds
+- Auto-restarts failed components
+- Handles graceful shutdown
+
+
+### Stop Processes
+Kill all running chaos components:
+```bash
+pkill -9 -f "run-chaos"
+pkill -9 -f "traffic-generator"  
+pkill -9 -f "chaos-generator"
+pkill -9 sdkperf
+```
+
+### Delete Infrastructure
+Remove all broker resources (VPNs, queues, users, bridges):
+```bash
+./scripts/semp-provision.sh delete
+```
+
+Interactive deletion with confirmation prompts.
+
+### Clean Logs
+```bash
+rm logs/*.log
+rm logs/pids/*.pid
+```
+
+### Full Reset
+```bash
+# Stop processes
+pkill -9 -f "run-chaos"; pkill -9 -f "traffic-generator"; pkill -9 -f "chaos-generator"; pkill -9 sdkperf
+
+# Delete infrastructure  
+./scripts/semp-provision.sh delete
+
+# Clean logs
+rm logs/*.log logs/pids/*.pid
+
+# Start fresh
+./scripts/semp-provision.sh create
+bash run-chaos.sh &
+```
 cd terraform/environments/base
 terraform plan
 terraform apply

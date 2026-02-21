@@ -41,7 +41,6 @@ case "$1" in
         pkill -f "master-chaos.sh" 2>/dev/null
         pkill -f "queue-killer.sh" 2>/dev/null
         pkill -f "multi-vpn-acl-violator.sh" 2>/dev/null
-        pkill -f "market-data-connection-bomber.sh" 2>/dev/null
         pkill -f "cross-vpn-bridge-killer.sh" 2>/dev/null
         pkill -f "continuous-publisher.sh" 2>/dev/null
         

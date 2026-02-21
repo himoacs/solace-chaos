@@ -30,7 +30,6 @@ TRAFFIC_GENERATORS=(
 ERROR_GENERATORS=(
     "error-generators/queue-killer.sh"
     "error-generators/multi-vpn-acl-violator.sh"
-    "error-generators/market-data-connection-bomber.sh"
     "error-generators/cross-vpn-bridge-killer.sh"
 )
 

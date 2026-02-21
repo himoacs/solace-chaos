@@ -10,6 +10,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Load environment and SEMP helper library
 source "$PROJECT_ROOT/.env"
 source "$SCRIPT_DIR/semp-lib.sh"
+source "$SCRIPT_DIR/config-parser.sh"
 
 # Track created resources for rollback
 CREATED_RESOURCES=()
@@ -91,26 +92,16 @@ EOF
 create_acl_profiles() {
     log_semp_step "Creating ACL Profiles..."
     
-    # Market Data VPN ACL Profiles
-    local profiles=(
-        "${MARKET_DATA_VPN}:market_data_publisher:allow:allow:allow"
-        "${MARKET_DATA_VPN}:market_data_subscriber:allow:disallow:allow"
-        "${MARKET_DATA_VPN}:risk_management:allow:allow:allow"
-        "${MARKET_DATA_VPN}:integration_service:allow:allow:allow"
-        "${MARKET_DATA_VPN}:restricted_market_access:allow:disallow:disallow"
-        "${MARKET_DATA_VPN}:bridge_access_market_data:allow:allow:allow"
-        "${TRADING_VPN}:trade_processor:allow:allow:allow"
-        "${TRADING_VPN}:chaos_testing:allow:allow:allow"
-        "${TRADING_VPN}:restricted_trade_access:allow:disallow:disallow"
-        "${TRADING_VPN}:bridge_access:allow:allow:allow"
-    )
-    
-    for profile_spec in "${profiles[@]}"; do
-        IFS=':' read -r vpn name connect publish subscribe <<< "$profile_spec"
+    # Iterate through all ACL profiles from config-parser
+    for profile_name in $(list_acl_profiles); do
+        local vpn=$(get_acl_config "$profile_name" "vpn")
+        local connect=$(get_acl_config "$profile_name" "connect")
+        local publish=$(get_acl_config "$profile_name" "publish")
+        local subscribe=$(get_acl_config "$profile_name" "subscribe")
         
         local payload=$(cat <<EOF
 {
-    "aclProfileName": "$name",
+    "aclProfileName": "$profile_name",
     "clientConnectDefaultAction": "$connect",
     "publishTopicDefaultAction": "$publish",
     "subscribeTopicDefaultAction": "$subscribe"
@@ -118,9 +109,9 @@ create_acl_profiles() {
 EOF
 )
         
-        if semp_post "/SEMP/v2/config/msgVpns/$vpn/aclProfiles" "$payload" "ACL Profile $name"; then
-            log_semp_success "Created ACL Profile: $vpn/$name"
-            CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/$vpn/aclProfiles/$name")
+        if semp_post "/SEMP/v2/config/msgVpns/$vpn/aclProfiles" "$payload" "ACL Profile $profile_name"; then
+            log_semp_success "Created ACL Profile: $vpn/$profile_name"
+            CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/$vpn/aclProfiles/$profile_name")
         else
             ((FAILED_OPERATIONS++))
         fi
@@ -174,111 +165,56 @@ EOF
 create_queues() {
     log_semp_step "Creating Queues..."
     
-    # equity_order_queue (trading VPN)
-    local payload=$(cat <<EOF
+    # Iterate through all queues from config-parser
+    for queue_name in $(list_queues); do
+        local vpn=$(get_queue_config "$queue_name" "vpn")
+        local quota=$(get_queue_config "$queue_name" "quota")
+        local access_type=$(get_queue_config "$queue_name" "access_type")
+        
+        local payload=$(cat <<EOF
 {
-    "queueName": "equity_order_queue",
-    "accessType": "exclusive",
+    "queueName": "${queue_name}",
+    "accessType": "${access_type}",
     "egressEnabled": true,
     "ingressEnabled": true,
-    "maxMsgSpoolUsage": 50,
+    "maxMsgSpoolUsage": ${quota},
     "permission": "consume",
     "rejectMsgToSenderOnDiscardBehavior": "when-queue-enabled"
 }
 EOF
 )
-    
-    if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues" "$payload" "Queue equity_order_queue"; then
-        log_semp_success "Created Queue: ${TRADING_VPN}/equity_order_queue"
-        CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues/equity_order_queue")
-    else
-        ((FAILED_OPERATIONS++))
-    fi
-    
-    # baseline_queue (trading VPN)
-    payload=$(cat <<EOF
-{
-    "queueName": "baseline_queue",
-    "accessType": "exclusive",
-    "egressEnabled": true,
-    "ingressEnabled": true,
-    "maxMsgSpoolUsage": 80,
-    "permission": "consume",
-    "rejectMsgToSenderOnDiscardBehavior": "when-queue-enabled"
-}
-EOF
-)
-    
-    if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues" "$payload" "Queue baseline_queue"; then
-        log_semp_success "Created Queue: ${TRADING_VPN}/baseline_queue"
-        CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues/baseline_queue")
-    else
-        ((FAILED_OPERATIONS++))
-    fi
-    
-    # bridge_receive_queue (trading VPN)
-    payload=$(cat <<EOF
-{
-    "queueName": "bridge_receive_queue",
-    "accessType": "exclusive",
-    "egressEnabled": true,
-    "ingressEnabled": true,
-    "maxMsgSpoolUsage": 120,
-    "permission": "consume",
-    "rejectMsgToSenderOnDiscardBehavior": "when-queue-enabled"
-}
-EOF
-)
-    
-    if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues" "$payload" "Queue bridge_receive_queue"; then
-        log_semp_success "Created Queue: ${TRADING_VPN}/bridge_receive_queue"
-        CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues/bridge_receive_queue")
-    else
-        ((FAILED_OPERATIONS++))
-    fi
-    
-    # cross_market_data_queue (market_data VPN)
-    payload=$(cat <<EOF
-{
-    "queueName": "cross_market_data_queue",
-    "accessType": "exclusive",
-    "egressEnabled": true,
-    "ingressEnabled": true,
-    "maxMsgSpoolUsage": 150,
-    "permission": "consume",
-    "rejectMsgToSenderOnDiscardBehavior": "when-queue-enabled"
-}
-EOF
-)
-    
-    if semp_post "/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}/queues" "$payload" "Queue cross_market_data_queue"; then
-        log_semp_success "Created Queue: ${MARKET_DATA_VPN}/cross_market_data_queue"
-        CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}/queues/cross_market_data_queue")
-    else
-        ((FAILED_OPERATIONS++))
-    fi
+        
+        if semp_post "/SEMP/v2/config/msgVpns/${vpn}/queues" "$payload" "Queue ${queue_name}"; then
+            log_semp_success "Created Queue: ${vpn}/${queue_name}"
+            CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${vpn}/queues/${queue_name}")
+        else
+            ((FAILED_OPERATIONS++))
+        fi
+    done
 }
 
 create_queue_subscriptions() {
     log_semp_step "Creating Queue Subscriptions..."
     
-    # equity_order_queue subscriptions
-    local sub="trading/orders/equities/>"
-    local payload="{\"subscriptionTopic\": \"$sub\"}"
-    if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues/equity_order_queue/subscriptions" "$payload" "Subscription"; then
-        log_semp_success "Added subscription to equity_order_queue: $sub"
-    else
-        ((FAILED_OPERATIONS++))
-    fi
-    
-    # baseline_queue subscriptions
-    sub="trading/orders/>"
-    payload="{\"subscriptionTopic\": \"$sub\"}"
-    if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/queues/baseline_queue/subscriptions" "$payload" "Subscription"; then
-        log_semp_success "Added subscription to baseline_queue: $sub"
-    else
-        ((FAILED_OPERATIONS++))
-    fi
+    # Iterate through all queues and add their subscriptions
+    for queue_name in $(list_queues); do
+        local vpn=$(get_queue_config "$queue_name" "vpn")
+        local subscriptions=$(get_queue_config "$queue_name" "subscriptions")
+        
+        # Split subscriptions by pipe character if multiple
+        IFS='|' read -ra subs <<< "$subscriptions"
+        
+        for sub in "${subs[@]}"; do
+            [[ -z "$sub" ]] && continue
+            
+            local payload="{\"subscriptionTopic\": \"$sub\"}"
+            if semp_post "/SEMP/v2/config/msgVpns/${vpn}/queues/${queue_name}/subscriptions" "$payload" "Subscription"; then
+                log_semp_success "Added subscription to ${queue_name}: $sub"
+            else
+                ((FAILED_OPERATIONS++))
+            fi
+        done
+    done
     
     # bridge_receive_queue subscriptions
     sub="market-data/bridge-stress/>"
@@ -302,22 +238,19 @@ create_queue_subscriptions() {
 create_users() {
     log_semp_step "Creating Client Usernames..."
     
-    # Market Data VPN Users - format: username:password:acl_profile:client_profile
-    local md_users=(
-        "market-feed:market_feed_pass:market_data_publisher:default"
-        "market-consumer:market_consumer_pass:market_data_subscriber:default"
-        "restricted-market:restricted_market_pass:restricted_market_access:default"
-        "risk-calculator:risk_calc_pass:risk_management:default"
-        "integration-feed:integration_pass:integration_service:default"
-        "bridge-user:bridge_pass:bridge_access_market_data:bridge_client_profile"
-    )
-    
-    for user_spec in "${md_users[@]}"; do
-        IFS=':' read -r username password acl_profile client_profile <<< "$user_spec"
+    # Iterate through all users from config-parser
+    for role in $(list_users); do
+        local vpn=$(get_user_config "$role" "vpn")
+        local password=$(get_user_config "$role" "password")
+        local acl_profile=$(get_user_config "$role" "acl_profile")
+        local client_profile=$(get_user_config "$role" "client_profile")
+        
+        # Use 'default' if client_profile not specified or empty
+        [[ -z "$client_profile" || "$client_profile" == "default" ]] && client_profile="default"
         
         local payload=$(cat <<EOF
 {
-    "clientUsername": "$username",
+    "clientUsername": "$role",
     "password": "$password",
     "aclProfileName": "$acl_profile",
     "clientProfileName": "$client_profile",
@@ -326,43 +259,54 @@ create_users() {
 EOF
 )
         
-        if semp_post "/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}/clientUsernames" "$payload" "User $username"; then
-            log_semp_success "Created user: ${MARKET_DATA_VPN}/$username"
-            CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}/clientUsernames/$username")
+        if semp_post "/SEMP/v2/config/msgVpns/${vpn}/clientUsernames" "$payload" "User $role"; then
+            log_semp_success "Created user: ${vpn}/$role"
+            CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${vpn}/clientUsernames/$role")
         else
             ((FAILED_OPERATIONS++))
         fi
     done
     
-    # Trading VPN Users - format: username:password:acl_profile:client_profile
-    local trading_users=(
-        "order-router:order_router_pass:trade_processor:guaranteed_messaging"
-        "chaos-generator:chaos_generator_pass:chaos_testing:guaranteed_messaging"
-        "restricted-trade:restricted_trade_pass:restricted_trade_access:default"
-        "bridge-user:bridge_pass:bridge_access:bridge_client_profile"
-    )
-    
-    for user_spec in "${trading_users[@]}"; do
-        IFS=':' read -r username password acl_profile client_profile <<< "$user_spec"
-        
+    # Create bridge users if bridges are enabled
+    if [ "${ENABLE_CROSS_VPN_BRIDGE}" == "true" ]; then
+        # Bridge user for market_data VPN
         local payload=$(cat <<EOF
 {
-    "clientUsername": "$username",
-    "password": "$password",
-    "aclProfileName": "$acl_profile",
-    "clientProfileName": "$client_profile",
+    "clientUsername": "bridge-user",
+    "password": "bridge_pass",
+    "aclProfileName": "bridge_access_market_data",
+    "clientProfileName": "bridge_client_profile",
     "enabled": true
 }
 EOF
 )
         
-        if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/clientUsernames" "$payload" "User $username"; then
-            log_semp_success "Created user: ${TRADING_VPN}/$username"
-            CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${TRADING_VPN}/clientUsernames/$username")
+        if semp_post "/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}/clientUsernames" "$payload" "User bridge-user"; then
+            log_semp_success "Created bridge user: ${MARKET_DATA_VPN}/bridge-user"
+            CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${MARKET_DATA_VPN}/clientUsernames/bridge-user")
         else
             ((FAILED_OPERATIONS++))
         fi
-    done
+        
+        # Bridge user for trading VPN
+        payload=$(cat <<EOF
+{
+    "clientUsername": "bridge-user",
+    "password": "bridge_pass",
+    "aclProfileName": "bridge_access",
+    "clientProfileName": "bridge_client_profile",
+    "enabled": true
+}
+EOF
+)
+        
+        if semp_post "/SEMP/v2/config/msgVpns/${TRADING_VPN}/clientUsernames" "$payload" "User bridge-user"; then
+            log_semp_success "Created bridge user: ${TRADING_VPN}/bridge-user"
+            CREATED_RESOURCES+=("/SEMP/v2/config/msgVpns/${TRADING_VPN}/clientUsernames/bridge-user")
+        else
+            ((FAILED_OPERATIONS++))
+        fi
+    fi
 }
 
 create_bridges() {

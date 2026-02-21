@@ -1,13 +1,32 @@
 #!/bin/bash
 
 # Load environment variables from .env file
-ENV_FILE="$(dirname $0)/../.env"
+# Find .env relative to this script's location
+if [[ -n "${BASH_SOURCE[0]}" ]]; then
+    # Bash
+    LOAD_ENV_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+elif [[ -n "${(%):-%x}" ]] 2>/dev/null; then
+    # Zsh
+    LOAD_ENV_SCRIPT_DIR="$(cd "$(dirname "${(%):-%x}")" && pwd)"
+else
+    # Fallback
+    LOAD_ENV_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+fi
+ENV_FILE="$LOAD_ENV_SCRIPT_DIR/../.env"
 
 if [ -f "$ENV_FILE" ]; then
     # Export variables, filtering comments and empty lines
     # Also remove inline comments and trim whitespace
     set -a
-    source <(grep -v '^[[:space:]]*#' "$ENV_FILE" | grep -v '^[[:space:]]*$' | sed 's/#.*$//' | sed 's/[[:space:]]*$//')
+    while IFS= read -r line; do
+        # Skip empty lines and comments
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+        # Remove inline comments and trailing whitespace
+        line=$(echo "$line" | sed 's/#.*$//' | sed 's/[[:space:]]*$//')
+        [[ -z "$line" ]] && continue
+        # Export the variable
+        eval "export $line"
+    done < "$ENV_FILE"
     set +a
 else
     echo "ERROR: .env file not found at $ENV_FILE"
@@ -28,13 +47,37 @@ for var in "${REQUIRED_VARS[@]}"; do
     # Use eval for bash 3.2 compatibility instead of ${!var}
     value=$(eval echo \$$var)
     if [ -z "$value" ]; then
-        echo "ERROR: Required environment variable $var is not set"
+        echo "ERROR: Required environment variable $var is not set in .env"
+        echo "Please check your .env file at: $ENV_FILE"
         exit 1
     fi
 done
 
 # SEMP API configuration
 SOLACE_SEMP_URL="http://${SOLACE_BROKER_HOST}:8080"
+
+# Source config-parser for infrastructure definitions
+if [ -f "${LOAD_ENV_SCRIPT_DIR}/config-parser.sh" ]; then
+    source "${LOAD_ENV_SCRIPT_DIR}/config-parser.sh"
+fi
+
+# Centralized logging function
+# Usage: chaos_log "component_name" "message"
+chaos_log() {
+    local component="$1"
+    local message="$2"
+    local log_dir="${LOAD_ENV_SCRIPT_DIR}/../logs"
+    local log_file="${log_dir}/${component}.log"
+    
+    # Create log directory if it doesn't exist
+    mkdir -p "$log_dir"
+    
+    # Log message with timestamp
+    echo "$(date '+%Y-%m-%d %H:%M:%S'): $message" | tee -a "$log_file"
+}
+
+# Export logging function
+export -f chaos_log
 
 # SEMP API Helper Functions
 get_queue_usage() {

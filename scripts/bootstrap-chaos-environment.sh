@@ -353,120 +353,17 @@ setup_terraform() {
         return 1
     fi
     
-    # Generate terraform.tfvars from environment variables
-    log_step "Generating Terraform variables..."
-    cat > terraform.tfvars <<EOF
-# Auto-generated from .env - Multi-VPN Configuration
-# Generated on: $(date)
-
-solace_broker_url = "${SOLACE_SEMP_URL}"
-solace_admin_user = "${SOLACE_ADMIN_USER}"
-solace_admin_password = "${SOLACE_ADMIN_PASSWORD}"
-
-# VPN Configuration (2-VPN Standard Edition)
-vpns = {
-  "market_data" = {
-    name = "${MARKET_DATA_VPN}"
-    max_connections = 50
-    max_subscriptions = 10000
-  }
-  "trading" = {
-    name = "${TRADING_VPN}"
-    max_connections = 100
-    max_subscriptions = 5000
-  }
-}
-
-# Queue Configuration by VPN (Quotas in MB for long-term operation)
-queues = {
-  "equity_order_queue" = {
-    vpn = "${TRADING_VPN}"
-    quota = 50
-    topic_subscriptions = ["trading/orders/equities/>"]
-  }
-  "baseline_queue" = {
-    vpn = "${TRADING_VPN}"
-    quota = 80
-    topic_subscriptions = ["trading/orders/>"]
-  }
-  "bridge_receive_queue" = {
-    vpn = "${TRADING_VPN}"
-    quota = 120
-    topic_subscriptions = ["market-data/bridge-stress/>"]
-  }
-  "cross_market_data_queue" = {
-    vpn = "${MARKET_DATA_VPN}"
-    quota = 150
-    topic_subscriptions = ["market-data/bridge-stress/>"]
-  }
-}
-
-# User Configuration by VPN
-vpn_users = {
-  "market_data_feed" = {
-    vpn = "${MARKET_DATA_VPN}"
-    username = "$(echo ${MARKET_DATA_FEED_USER} | cut -d'@' -f1)"
-    password = "${MARKET_DATA_FEED_PASSWORD}"
-    acl_profile = "market_data_publisher"
-  }
-  "market_data_consumer" = {
-    vpn = "${MARKET_DATA_VPN}"
-    username = "$(echo ${MARKET_DATA_CONSUMER_USER} | cut -d'@' -f1)"
-    password = "${MARKET_DATA_CONSUMER_PASSWORD}"
-    acl_profile = "market_data_subscriber"
-  }
-  "restricted_market" = {
-    vpn = "${MARKET_DATA_VPN}"
-    username = "$(echo ${RESTRICTED_MARKET_USER} | cut -d'@' -f1)"
-    password = "${RESTRICTED_MARKET_PASSWORD}"
-    acl_profile = "restricted_market_access"
-  }
-  "order_router" = {
-    vpn = "${TRADING_VPN}"
-    username = "$(echo ${ORDER_ROUTER_USER} | cut -d'@' -f1)"
-    password = "${ORDER_ROUTER_PASSWORD}"
-    acl_profile = "trade_processor"
-  }
-  "chaos_generator" = {
-    vpn = "${TRADING_VPN}"
-    username = "$(echo ${CHAOS_GENERATOR_USER} | cut -d'@' -f1)"
-    password = "${CHAOS_GENERATOR_PASSWORD}"
-    acl_profile = "chaos_testing"
-  }
-  "restricted_trade" = {
-    vpn = "${TRADING_VPN}"
-    username = "$(echo ${RESTRICTED_TRADE_USER} | cut -d'@' -f1)"
-    password = "${RESTRICTED_TRADE_PASSWORD}"
-    acl_profile = "restricted_trade_access"
-  }
-  "integration_user" = {
-    vpn = "${MARKET_DATA_VPN}"
-    username = "$(echo ${INTEGRATION_USER} | cut -d'@' -f1)"
-    password = "${INTEGRATION_PASSWORD}"
-    acl_profile = "integration_service"
-  }
-  "bridge_user" = {
-    vpn = "${TRADING_VPN}"
-    username = "bridge-user"
-    password = "bridge_pass"
-    acl_profile = "bridge_access"
-  }
-  "bridge_user_market_data" = {
-    vpn = "${MARKET_DATA_VPN}"
-    username = "bridge-user"
-    password = "bridge_pass"
-    acl_profile = "bridge_access_market_data"
-  }
-}
-
-# Bridge Configuration
-enable_cross_vpn_bridge = ${ENABLE_CROSS_VPN_BRIDGE}
-bridge_username = "bridge-user"
-bridge_password = "bridge_pass"
-bridges = {}
-EOF
+    # Generate terraform.tfvars using new centralized script
+    log_step "Generating Terraform variables from infrastructure definitions..."
+    if bash "${SCRIPT_DIR}/generate-terraform-config.sh" "${broker_type}" "${terraform_dir}"; then
+        log_success "Terraform variables generated successfully"
+    else
+        log_error "Failed to generate Terraform configuration"
+        cd - > /dev/null
+        return 1
+    fi
     
-    log_success "Terraform variables generated"
+    log_success "Terraform infrastructure configured"
     
     # Validate configuration
     if terraform validate; then
