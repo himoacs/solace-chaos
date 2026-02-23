@@ -23,26 +23,29 @@ log() {
 main() {
     log "$BLUE" "=== Quick Cleanup - Stop Processes Only ==="
     
-    # Stop chaos daemon processes
-    if [ -x "$SCRIPT_DIR/chaos-daemon.sh" ]; then
-        log "$YELLOW" "Stopping chaos testing processes..."
-        "$SCRIPT_DIR/chaos-daemon.sh" stop
-    else
-        log "$YELLOW" "Stopping processes manually..."
-        pkill -f "baseline-market-data" 2>/dev/null || true
-        pkill -f "baseline-trade-flow" 2>/dev/null || true  
-        pkill -f "queue-killer" 2>/dev/null || true
-        pkill -f "sdkperf" 2>/dev/null || true
-        sleep 2
-    fi
+    # Stop chaos testing processes
+    log "$YELLOW" "Stopping chaos testing processes..."
+    pkill -f "run-chaos.sh" 2>/dev/null || true
+    pkill -f "traffic-generator.sh" 2>/dev/null || true
+    pkill -f "chaos-generator.sh" 2>/dev/null || true
+    pkill -f "sdkperf" 2>/dev/null || true
+    sleep 2
+    
+    # Force kill any remaining
+    pkill -9 -f "run-chaos.sh" 2>/dev/null || true
+    pkill -9 -f "traffic-generator.sh" 2>/dev/null || true
+    pkill -9 -f "chaos-generator.sh" 2>/dev/null || true
+    pkill -9 -f "sdkperf" 2>/dev/null || true
     
     # Clean up PID files and locks
+    rm -f "$SCRIPT_DIR/../logs/pids"/*.pid 2>/dev/null || true
+    rm -f "$SCRIPT_DIR/../tmp/pids"/*.pid 2>/dev/null || true
     rm -f "$SCRIPT_DIR/logs"/*.pid 2>/dev/null || true
     rm -f "$SCRIPT_DIR/logs"/*.lock 2>/dev/null || true
     
     log "$GREEN" "✅ All chaos processes stopped"
-    log "$BLUE" "Terraform resources and configuration preserved"
-    log "$YELLOW" "To restart: ./scripts/chaos-daemon.sh start"
+    log "$BLUE" "Broker resources and configuration preserved"
+    log "$YELLOW" "To restart: bash run-chaos.sh &"
     log "$YELLOW" "For full cleanup: ./scripts/full-cleanup.sh"
 }
 

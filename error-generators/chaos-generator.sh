@@ -26,7 +26,7 @@ Queue Killer Options:
 
 ACL Violation Options:
   --test-user ROLE      User role to test (default: restricted-market)
-  --violation-rate NUM  Attempts per second (default: 1)
+  --violation-rate NUM  Attempts per second (default: 0.0002778, ~1/hour)
 
 Connection Storm Options:
   --connection-count NUM Max concurrent connections (default: 25)
@@ -58,7 +58,7 @@ BURST_INTERVAL="1800"
 MESSAGE_SIZE="5000"
 CYCLE_INTERVAL=""
 TEST_USER="restricted-market"
-VIOLATION_RATE="1"
+VIOLATION_RATE="0.0002778"
 CONNECTION_COUNT="25"
 STORM_DURATION="600"
 ATTACK_DURATION=""

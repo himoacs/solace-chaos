@@ -172,19 +172,13 @@ setup_sdkperf() {
 # Step 3: Project Structure Setup
 setup_project_structure() {
     log_step "Creating project directory structure..."
-    
     # Create all necessary directories
     local directories=(
         "scripts/logs"
         "traffic-generators"
         "error-generators"
-        "terraform/environments/base"
-        "terraform/environments/software"
-        "terraform/environments/appliance"
-        "terraform/modules/vpn"
-        "terraform/modules/queue"
-        "terraform/modules/user"
-        "terraform/modules/bridge"
+        "logs/pids"
+        "tmp/pids"
     )
     
     for dir in "${directories[@]}"; do
@@ -1400,34 +1394,15 @@ main() {
         exit 1
     fi
     
-    # Prompt for provisioning method
-    if ! prompt_provisioning_method; then
-        log_error "Provisioning method selection failed"
-        exit 1
-    fi
-    
-    # Setup Terraform only if using terraform method
-    if [ "$PROVISIONING_METHOD" = "terraform" ]; then
-        if ! setup_terraform; then
-            log_error "Terraform setup failed"
-            exit 1
-        fi
-    else
-        log_step "Skipping Terraform setup (using SEMP API)"
-    fi
+    # Always use SEMP API for provisioning
+    export PROVISIONING_METHOD="semp"
+    log_step "Using SEMP API for infrastructure provisioning"
     
     # Deploy infrastructure if requested
     if [ "${SETUP_VPNS}" = "true" ]; then
-        if [ "$PROVISIONING_METHOD" = "semp" ]; then
-            if ! deploy_via_semp; then
-                log_error "SEMP infrastructure deployment failed"
-                exit 1
-            fi
-        else
-            if ! deploy_infrastructure; then
-                log_error "Terraform infrastructure deployment failed"
-                exit 1
-            fi
+        if ! deploy_via_semp; then
+            log_error "SEMP infrastructure deployment failed"
+            exit 1
         fi
     else
         log_warning "Skipping infrastructure deployment (SETUP_VPNS=false)"
@@ -1462,13 +1437,13 @@ main() {
     echo "=================================="
     echo ""
     echo "Configuration:"
-    echo "  Provisioning method: ${PROVISIONING_METHOD}"
+    echo "  Provisioning method: SEMP API"
     echo "  Broker: ${SOLACE_BROKER_HOST}"
     echo "  VPNs: ${MARKET_DATA_VPN}, ${TRADING_VPN}"
     echo ""
     echo "Next steps:"
     echo "  1. Review the setup log: ${BOOTSTRAP_LOG}"
-    echo "  2. Start the chaos testing: ./scripts/master-chaos.sh"
+    echo "  2. Start the chaos testing: bash run-chaos.sh &"
     echo "  3. Check status anytime: ./scripts/status-check.sh"
     echo ""
     echo "The environment is ready for long-term chaos testing!"

@@ -17,7 +17,7 @@ cleanup_old_logs() {
     find "$SCRIPT_DIR/scripts/logs" -name "*.start" -type f -mmin +1440 -exec rm -f {} \; 2>/dev/null || true
     
     # Clean log backups (older than 7 days)
-    find "$SCRIPT_DIR/scripts/log-backups" -type d -mtime +7 -exec rm -rf {} \; 2>/dev/null || true
+    find "$SCRIPT_DIR/log-backups" -type d -mtime +7 -exec rm -rf {} \; 2>/dev/null || true
     
     echo "✅ Log cleanup completed"
 }
@@ -29,20 +29,16 @@ case "$1" in
     "start"|"run"|"chaos")
         # Clean up old logs before starting
         cleanup_old_logs
-        exec "$SCRIPT_DIR/scripts/master-chaos.sh" "${@:2}"
+        exec bash "$SCRIPT_DIR/run-chaos.sh" "${@:2}"
         ;;
     "stop"|"kill")
         # Kill all chaos testing processes
         echo "🛑 Stopping all chaos testing processes..."
         
-        # Kill shell scripts first
-        pkill -f "baseline-market-data.sh" 2>/dev/null
-        pkill -f "baseline-trade-flow.sh" 2>/dev/null
-        pkill -f "master-chaos.sh" 2>/dev/null
-        pkill -f "queue-killer.sh" 2>/dev/null
-        pkill -f "multi-vpn-acl-violator.sh" 2>/dev/null
-        pkill -f "cross-vpn-bridge-killer.sh" 2>/dev/null
-        pkill -f "continuous-publisher.sh" 2>/dev/null
+        # Kill orchestrator and generators
+        pkill -f "run-chaos.sh" 2>/dev/null
+        pkill -f "traffic-generator.sh" 2>/dev/null
+        pkill -f "chaos-generator.sh" 2>/dev/null
         
         # Kill underlying Java SDKPerf processes
         pkill -f "SDKPerf_java" 2>/dev/null
@@ -52,15 +48,15 @@ case "$1" in
         sleep 2
         pkill -9 -f "SDKPerf_java" 2>/dev/null
         pkill -9 -f "sdkperf_java.sh" 2>/dev/null
+        pkill -9 -f "run-chaos.sh" 2>/dev/null
+        pkill -9 -f "traffic-generator.sh" 2>/dev/null
+        pkill -9 -f "chaos-generator.sh" 2>/dev/null
         
         # Clean up PID files
-        rm -f scripts/logs/*.pid 2>/dev/null
-        rm -f scripts/logs/*.start_time 2>/dev/null
+        rm -f logs/pids/*.pid 2>/dev/null
+        rm -f tmp/pids/*.pid 2>/dev/null
         
         echo "✅ All chaos testing processes stopped"
-        ;;
-    "daemon"|"manage")
-        exec "$SCRIPT_DIR/scripts/chaos-daemon.sh" "${@:2}"
         ;;
     "cleanup"|"clean")
         case "${2:-all}" in
@@ -75,9 +71,6 @@ case "$1" in
         ;;
     "quick-cleanup"|"quick")
         exec "$SCRIPT_DIR/scripts/quick-cleanup.sh" "${@:2}"
-        ;;
-    "terraform-cleanup"|"tf-clean")
-        exec "$SCRIPT_DIR/scripts/terraform-cleanup.sh" "${@:2}"
         ;;
     "nuclear"|"nuke"|"kill-all")
         echo "☢️  Nuclear cleanup - killing ALL SDKPerf processes..."
@@ -94,20 +87,17 @@ case "$1" in
         echo "  ./chaos.sh bootstrap    # Initial environment setup"
         echo "  ./chaos.sh start        # Start chaos testing (auto-cleans old logs)"
         echo "  ./chaos.sh stop         # Stop all chaos testing processes"
-        echo "  ./chaos.sh daemon       # Process management daemon"
         echo "  ./chaos.sh status       # Check component status"
         echo "  ./chaos.sh cleanup      # Full interactive cleanup + old logs"
         echo "  ./chaos.sh cleanup logs # Only clean old logs (24h+)"
         echo "  ./chaos.sh quick        # Quick process cleanup"
-        echo "  ./chaos.sh tf-clean     # Terraform-only cleanup"
         echo ""
         echo "Direct script access:"
         echo "  ./scripts/bootstrap-chaos-environment.sh"
-        echo "  ./scripts/master-chaos.sh"
-        echo "  ./scripts/chaos-daemon.sh"
+        echo "  ./run-chaos.sh"
+        echo "  ./scripts/semp-provision.sh [create|destroy]"
         echo "  ./scripts/full-cleanup.sh"
         echo "  ./scripts/quick-cleanup.sh"
-        echo "  ./scripts/terraform-cleanup.sh"
         echo ""
         ;;
 esac

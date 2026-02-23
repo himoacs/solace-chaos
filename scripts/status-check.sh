@@ -6,11 +6,11 @@ echo "🔍 Solace Chaos Environment Status"
 echo "=================================="
 echo ""
 
-# Check if master orchestrator is running
-if pgrep -f "master-chaos.sh" > /dev/null; then
-    echo "✅ Master orchestrator: RUNNING"
+# Check if main orchestrator is running
+if pgrep -f "run-chaos.sh" > /dev/null; then
+    echo "✅ Main orchestrator (run-chaos.sh): RUNNING"
 else
-    echo "❌ Master orchestrator: STOPPED"
+    echo "❌ Main orchestrator (run-chaos.sh): STOPPED"
 fi
 
 echo ""
@@ -18,17 +18,14 @@ echo "Component Status:"
 echo "----------------"
 
 components=(
-    "baseline-market-data.sh"
-    "baseline-trade-flow.sh"
-    "queue-killer.sh"
-    "multi-vpn-acl-violator.sh"
-    "market-data-connection-bomber.sh"
-    "cross-vpn-bridge-killer.sh"
+    "traffic-generator.sh"
+    "chaos-generator.sh"
 )
 
 for component in "${components[@]}"; do
-    if pgrep -f "$component" > /dev/null; then
-        echo "✅ $component: RUNNING"
+    count=$(pgrep -f "$component" | wc -l | tr -d ' ')
+    if [ "$count" -gt 0 ]; then
+        echo "✅ $component: RUNNING ($count processes)"
     else
         echo "❌ $component: STOPPED"
     fi

@@ -9,7 +9,7 @@ Three different cleanup scripts for different scenarios:
 |--------|-------|-------|--------|----------|
 | `quick-cleanup.sh` | ⚡ Fast | Processes only | 🟢 Safe | Routine restarts |
 | `full-cleanup.sh` | 🐌 Interactive | Everything | 🟡 Prompted | Complete reset |
-| `terraform-cleanup.sh` | ⚡ Fast | Terraform only | 🔴 Destructive | Infrastructure reset |
+| `semp-provision.sh destroy` | ⚡ Fast | SEMP resources only | 🔴 Destructive | Infrastructure reset |
 
 ---
 
@@ -18,10 +18,10 @@ Three different cleanup scripts for different scenarios:
 ./scripts/quick-cleanup.sh
 ```
 **What it does:**
-- ✅ Stops all chaos processes (via daemon)  
+- ✅ Stops all chaos processes  
 - ✅ Removes PID files and locks
 - ✅ Preserves all configuration and logs
-- ✅ Preserves Terraform infrastructure
+- ✅ Preserves broker infrastructure
 
 **Use when:** You want to restart quickly without losing anything
 
@@ -36,7 +36,7 @@ Three different cleanup scripts for different scenarios:
 - 🟡 Optionally backs up and cleans logs
 - 🟡 Optionally cleans SDKPerf extracted files
 - 🟡 Optionally resets .env to template defaults
-- 🟡 Optionally destroys Terraform resources
+- 🟡 Optionally destroys SEMP-provisioned broker resources
 
 **Features:**
 - Interactive prompts for each action
@@ -48,15 +48,14 @@ Three different cleanup scripts for different scenarios:
 
 ---
 
-## 💥 Terraform Cleanup (Infrastructure)
+## 💥 SEMP Infrastructure Cleanup
 ```bash
-./terraform-cleanup.sh
+./scripts/semp-provision.sh destroy
 ```
 **What it does:**
-- 🔴 **DESTROYS ALL TERRAFORM RESOURCES**
-- Shows destruction plan before proceeding
+- 🔴 **DESTROYS ALL SEMP-PROVISIONED RESOURCES**
+- Shows what will be deleted before proceeding
 - Multiple confirmation prompts
-- Backs up Terraform state files
 - Preserves local files and processes
 
 **⚠️ DESTROYS:**
@@ -64,6 +63,8 @@ Three different cleanup scripts for different scenarios:
 - All queues and their messages
 - All user accounts (except admin)
 - All ACL profiles
+- All client profiles
+- All bridges
 - All queue subscriptions
 
 **Use when:** You want to reset broker infrastructure only
@@ -75,7 +76,9 @@ Three different cleanup scripts for different scenarios:
 ### Quick Restart
 ```bash
 ./scripts/quick-cleanup.sh
-./scripts/chaos-daemon.sh start
+bash run-chaos.sh &
+# Or use wrapper
+./chaos.sh start
 ```
 
 ### Complete Environment Reset
@@ -87,16 +90,15 @@ Three different cleanup scripts for different scenarios:
 
 ### Infrastructure Reset Only
 ```bash
-./scripts/terraform-cleanup.sh
-cd terraform/environments/base && terraform apply
-./scripts/chaos-daemon.sh restart
+./scripts/semp-provision.sh destroy
+./scripts/semp-provision.sh create
+bash run-chaos.sh &
 ```
 
 ### Partial Reset (Keep Processes Running)
 ```bash
-cd terraform/environments/base
-terraform destroy -auto-approve
-terraform apply -auto-approve
+./scripts/semp-provision.sh destroy
+./scripts/semp-provision.sh create
 # Processes continue running with new infrastructure
 ```
 
@@ -111,11 +113,11 @@ All cleanup scripts include:
 - ✅ Interrupt handling (Ctrl+C safety)
 - ✅ Non-destructive defaults
 
-**Terraform cleanup specifically:**
-- 🔴 Shows destruction plan before proceeding
-- 🔴 Requires two separate confirmations
+**SEMP infrastructure cleanup specifically:**
+- 🔴 Shows what will be deleted before proceeding
+- 🔴 Requires explicit confirmation
 - 🔴 Cannot be run accidentally
-- 🔴 Always backs up state files
+- 🔴 Uses Solace SEMP API for clean removal
 
 ---
 
@@ -125,6 +127,6 @@ All cleanup scripts include:
 |------|-----------------|
 | Logs | `log-backups/YYYYMMDD_HHMMSS/` |
 | .env files | `.env.backup.YYYYMMDD_HHMMSS` |
-| Terraform state | `terraform-backups/YYYYMMDD_HHMMSS/` |
+
 
 All timestamps in local timezone.

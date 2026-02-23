@@ -1,6 +1,6 @@
 #!/bin/bash
 # Full Environment Cleanup Script - Resets entire chaos testing environment
-# This script stops all processes, cleans logs, and optionally destroys Terraform resources
+# This script stops all processes, cleans logs, and optionally destroys SEMP-provisioned resources
 
 set -e
 
@@ -46,32 +46,24 @@ confirm() {
 stop_processes() {
     log "$YELLOW" "Stopping all chaos testing processes..."
     
-    # Use the daemon to stop everything cleanly
-    if [ -x "$SCRIPT_DIR/chaos-daemon.sh" ]; then
-        log "$BLUE" "Using chaos daemon to stop processes..."
-        "$SCRIPT_DIR/chaos-daemon.sh" stop 2>&1 | tee -a "$LOG_FILE"
-    else
-        log "$YELLOW" "Chaos daemon not found, using manual process termination..."
-        
-        # Kill processes by pattern
-        local patterns=("baseline-market-data" "baseline-trade-flow" "queue-killer" "sdkperf")
-        
-        for pattern in "${patterns[@]}"; do
-            local pids=$(pgrep -f "$pattern" 2>/dev/null || true)
-            if [ -n "$pids" ]; then
-                log "$YELLOW" "Killing processes matching '$pattern': $pids"
-                pkill -f "$pattern" 2>/dev/null || true
-                sleep 2
-                
-                # Force kill if still running
-                local remaining_pids=$(pgrep -f "$pattern" 2>/dev/null || true)
-                if [ -n "$remaining_pids" ]; then
-                    log "$RED" "Force killing remaining processes: $remaining_pids"
-                    pkill -9 -f "$pattern" 2>/dev/null || true
-                fi
+    # Kill processes by pattern
+    local patterns=("run-chaos.sh" "traffic-generator.sh" "chaos-generator.sh" "sdkperf")
+    
+    for pattern in "${patterns[@]}"; do
+        local pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+        if [ -n "$pids" ]; then
+            log "$YELLOW" "Killing processes matching '$pattern': $pids"
+            pkill -f "$pattern" 2>/dev/null || true
+            sleep 2
+            
+            # Force kill if still running
+            local remaining_pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+            if [ -n "$remaining_pids" ]; then
+                log "$RED" "Force killing remaining processes: $remaining_pids"
+                pkill -9 -f "$pattern" 2>/dev/null || true
             fi
-        done
-    fi
+        fi
+    done
     
     log "$GREEN" "✅ All chaos processes stopped"
 }
@@ -190,29 +182,16 @@ main() {
     # Optional SDKPerf cleanup
     cleanup_sdkperf
     
-    # Optional infrastructure cleanup (route based on provisioning method)
+    # Optional infrastructure cleanup (SEMP-based)
     infrastructure_cleaned=false
     if confirm "Do you want to cleanup infrastructure (destroy all broker resources)?"; then
-        PROVISIONING_METHOD="${PROVISIONING_METHOD:-terraform}"
-        
-        if [ "$PROVISIONING_METHOD" = "semp" ]; then
-            log "$BLUE" "Running SEMP cleanup..."
-            if [ -f "$SCRIPT_DIR/semp-provision.sh" ]; then
-                bash "$SCRIPT_DIR/semp-provision.sh" delete --force 2>&1 | tee -a "$LOG_FILE"
-                infrastructure_cleaned=true
-            else
-                log "$RED" "semp-provision.sh not found"
-                log "$YELLOW" "You may need to manually clean up broker resources via SEMP"
-            fi
+        log "$BLUE" "Running SEMP cleanup..."
+        if [ -f "$SCRIPT_DIR/semp-provision.sh" ]; then
+            bash "$SCRIPT_DIR/semp-provision.sh" destroy 2>&1 | tee -a "$LOG_FILE"
+            infrastructure_cleaned=true
         else
-            log "$BLUE" "Running Terraform cleanup..."
-            if [ -x "$SCRIPT_DIR/terraform-cleanup.sh" ]; then
-                "$SCRIPT_DIR/terraform-cleanup.sh"
-                infrastructure_cleaned=true
-            else
-                log "$RED" "terraform-cleanup.sh not found or not executable"
-                log "$YELLOW" "You can run it manually later if needed"
-            fi
+            log "$RED" "semp-provision.sh not found"
+            log "$YELLOW" "You may need to manually clean up broker resources via SEMP"
         fi
     fi
     

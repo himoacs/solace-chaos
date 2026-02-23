@@ -5,20 +5,21 @@ This guide helps you migrate to the new simplified infrastructure configuration 
 ## What Changed?
 
 ### ✅ Benefits
-- **Single Source of Truth**: Infrastructure defined once in `.env`, auto-generates both Terraform and SEMP configs
-- **No Template Editing**: Never manually edit `terraform.tfvars` again - it's auto-generated
+- **Single Source of Truth**: Infrastructure defined once in `.env`, auto-generates SEMP API provisioning
+- **No Template Editing**: Infrastructure provisioned directly via SEMP API
 - **70% Fewer Scripts**: Consolidated from 7+ specialized generators to 2 parameterized scripts
-- **Reduced Duplication**: Eliminated 4-way configuration duplication (`.env` → `terraform.tfvars` → `semp-provision.sh` → `main.tf`)
+- **Reduced Duplication**: Centralized infrastructure definitions in `.env`
 - **Cleaner Connections**: SDKPerf connection boilerplate extracted to reusable wrapper functions
 - **1500+ Lines Removed**: Simplified codebase with centralized infrastructure definitions
 
 ### 🔧 New Components
 
 1. **[scripts/config-parser.sh](scripts/config-parser.sh)** - Parses structured infrastructure definitions from `.env`
-2. **[scripts/generate-terraform-config.sh](scripts/generate-terraform-config.sh)** - Auto-generates `terraform.tfvars` from `.env`
+2. **[scripts/semp-provision.sh](scripts/semp-provision.sh)** - SEMP API-based infrastructure provisioning
 3. **[scripts/sdkperf-wrapper.sh](scripts/sdkperf-wrapper.sh)** - Centralized SDKPerf connection management
 4. **[traffic-generators/traffic-generator.sh](traffic-generators/traffic-generator.sh)** - Unified traffic generator with modes
 5. **[error-generators/chaos-generator.sh](error-generators/chaos-generator.sh)** - Unified chaos generator with scenarios
+6. **[run-chaos.sh](run-chaos.sh)** - New unified orchestrator with health monitoring
 
 ### 📝 Environment File Changes
 
@@ -83,9 +84,11 @@ USER_9="risk-calculator,trading,risk_pass,trade_processor,default"
 ACL_11="auditor,trading,allow,disallow,allow"
 ```
 
-After changes, re-run bootstrap or provisioning:
-- For Terraform: `./scripts/bootstrap-chaos-environment.sh` (it will regenerate `terraform.tfvars`)
-- For SEMP: `./scripts/semp-provision.sh create` (it will use new definitions automatically)
+After changes, re-run provisioning:
+```bash
+./scripts/semp-provision.sh destroy
+./scripts/semp-provision.sh create
+```
 
 ## Using New Consolidated Generators
 
@@ -127,7 +130,9 @@ After changes, re-run bootstrap or provisioning:
 
 ## Script Mapping
 
-| Old Script | New Equivalent |
+**Note**: As of February 2026, old specialized scripts have been removed. Use the unified generators shown below.
+
+| Old Script (Removed) | New Equivalent (Current) |
 |------------|---------------|
 | `baseline-market-data.sh` | `traffic-generator.sh --mode market-data` |
 | `baseline-trade-flow.sh` | `traffic-generator.sh --mode trade-flow` |
@@ -136,6 +141,8 @@ After changes, re-run bootstrap or provisioning:
 | `multi-vpn-acl-violator.sh` | `chaos-generator.sh --scenario acl-violation` |
 | `market-data-connection-bomber.sh` | `chaos-generator.sh --scenario connection-storm` |
 | `cross-vpn-bridge-killer.sh` | `chaos-generator.sh --scenario bridge-stress` |
+| `master-chaos.sh` | `run-chaos.sh` (unified orchestrator) |
+| `chaos-daemon.sh` | `run-chaos.sh` (with built-in health monitoring) |
 
 ## API Changes for Custom Scripts
 
@@ -173,32 +180,15 @@ This means the config-parser couldn't find the infrastructure definition. Check:
 2. Variables follow the correct format (see examples above)
 3. Run: `source scripts/config-parser.sh && list_queues` to verify parsing
 
-### "Terraform variables generation failed"
+### "SEMP API provisioning failed"
 
 Check:
-1. `.env` has all required infrastructure definitions
-2. Run manually: `./scripts/generate-terraform-config.sh software`
-3. Check output for specific errors
-
-### Old scripts still running
-
-The old specialized scripts are still available for backward compatibility:
-- Located in `traffic-generators/` and `error-generators/`
-- Will continue to work but are deprecated
-- Consider migrating to new consolidated scripts for easier maintenance
+1. SEMP_HOST and SEMP_PORT are correctly configured in `.env`
+2. SEMP credentials are valid (SEMP_USERNAME, SEMP_PASSWORD)
+3. Broker is accessible: `curl http://${SEMP_HOST}:${SEMP_PORT}/SEMP/v2/config`
+4. Check authorization level if using hardware broker (see SEMP provisioning guide)
 
 ## Advanced Usage
-
-### Multiple Environments
-
-Generate Terraform configs for different broker types:
-
-```bash
-# Generate for all environments
-./scripts/generate-terraform-config.sh base
-./scripts/generate-terraform-config.sh software
-./scripts/generate-terraform-config.sh appliance
-```
 
 ### Custom Queue Operations
 
@@ -233,13 +223,19 @@ chaos_log "my-component" "Operation completed successfully"
 
 Logs are written to `logs/my-component.log` with timestamps.
 
-## Rollback
+## Migration Complete
 
-If you need to revert to the old system:
+**Status**: As of February 2026, the migration is complete:
+- ✅ Old specialized scripts removed
+- ✅ Terraform infrastructure removed (SEMP-only approach)
+- ✅ Unified generators in production use
+- ✅ Single orchestrator (run-chaos.sh) deployed
 
-1. The old scripts are still available and unchanged
-2. Restore your backed up `.env`: `cp .env.backup .env`
-3. Continue using the old specialized scripts
+All new deployments should use:
+- `traffic-generator.sh` for traffic generation
+- `chaos-generator.sh` for error injection
+- `run-chaos.sh` for orchestration
+- `semp-provision.sh` for infrastructure provisioning
 
 ## Support
 
@@ -250,10 +246,12 @@ For issues or questions:
 
 ## Summary
 
-The new system dramatically simplifies configuration management while maintaining full backward compatibility. Key improvements:
+The migration has been completed successfully. Key improvements:
 
 - ✅ Edit infrastructure in one place (`.env`)
-- ✅ Auto-generate Terraform and SEMP configs
+- ✅ Auto-provision via SEMP API
 - ✅ Fewer, more powerful parameterized scripts
 - ✅ Centralized connection and logging utilities
+- ✅ Simplified orchestration with run-chaos.sh
 - ✅ Easier customization and maintenance
+- ✅ Eliminated Terraform dependency

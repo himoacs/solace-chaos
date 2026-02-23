@@ -55,12 +55,12 @@ That's it! The system will run continuously generating realistic traffic and var
 - Centralized logging
 
 **Traffic Generators**: (2 modes via `traffic-generator.sh`)
-- **market-data**: Publishes stock quotes to market_data VPN (2K msg/sec, 256 bytes)
+- **market-data**: Publishes and subscribes to stock quotes on market_data VPN (2K msg/sec, 256 bytes)
 - **trade-flow**: Sends orders to trading VPN queues with drain consumers
 
 **Chaos Generators**: (4 scenarios via `chaos-generator.sh`)
 - **queue-killer**: Floods queues to test overflow behavior
-- **acl-violation**: Attempts unauthorized topic access
+- **acl-violation**: Attempts unauthorized topic access (~1 per hour)
 - **connection-storm**: Creates rapid connection/disconnection cycles
 - **bridge-stress**: High-volume bridge stress testing (5K msg/sec, 10KB messages)
 
@@ -199,46 +199,46 @@ rm logs/*.log logs/pids/*.pid
 ./scripts/semp-provision.sh create
 bash run-chaos.sh &
 ```
-cd terraform/environments/base
-terraform plan
-terraform apply
-```
-
-To check current queue configuration:
-```bash
-grep -A 5 "access_type" terraform/environments/base/main.tf
-grep -A 10 "queues" terraform/environments/base/terraform.tfvars
-```
 
 ## Process Management
 
-### Chaos Daemon
-Use the chaos daemon for managing all chaos testing components:
+### Unified Orchestrator (run-chaos.sh)
+The main orchestrator manages all chaos testing components with built-in health monitoring:
+
 ```bash
-./scripts/chaos-daemon.sh start         # Start all components
-./scripts/chaos-daemon.sh status        # Check status of all components  
-./scripts/chaos-daemon.sh stop          # Stop all components
-./scripts/chaos-daemon.sh restart       # Restart everything
-./scripts/chaos-daemon.sh daemon &      # Run as self-healing daemon
+# Start all chaos testing components
+bash run-chaos.sh &
+
+# Or use the convenience wrapper
+./chaos.sh start
+
+# Stop all components
+./chaos.sh stop
+
+# Check status
+./scripts/status-check.sh
 ```
 
-### Continuous Publisher  
-For unattended queue buildup testing:
-```bash
-./scripts/continuous-publisher.sh       # Start continuous high-rate publisher
-nohup ./scripts/continuous-publisher.sh > /dev/null 2>&1 &  # Run in background
-```
-- **Auto-restart**: Automatically restarts after each 1M message cycle
-- **High throughput**: 8000+ msg/sec for reliable queue buildup
-- **Low-touch**: Designed for weeks of unattended operation
+**Features:**
+- **Auto-restart**: Automatically restarts failed components
+- **Health monitoring**: Continuous health checks with auto-recovery
+- **Weekend-aware**: Reduces activity on weekends like real markets
+- **Unified logging**: All components log to `logs/` directory
+- **Signal handling**: Graceful shutdown on SIGTERM/SIGINT
 
-### Individual Scripts
-Run specific components independently:
+### Individual Components
+For advanced testing, run components independently:
+
 ```bash
-./scripts/master-chaos.sh               # Main orchestrator
-./error-generators/queue-killer.sh      # Queue overflow testing
-./error-generators/multi-vpn-acl-violator.sh  # ACL violation testing
-./traffic-generators/baseline-market-data.sh  # Baseline market data
+# Traffic generators
+./traffic-generators/traffic-generator.sh --mode market-data
+./traffic-generators/traffic-generator.sh --mode trade-flow
+
+# Error generators
+./error-generators/chaos-generator.sh --scenario queue-killer
+./error-generators/chaos-generator.sh --scenario acl-violation
+./error-generators/chaos-generator.sh --scenario connection-storm
+./error-generators/chaos-generator.sh --scenario bridge-stress
 ```
 
 ## Cleanup Options
@@ -249,9 +249,9 @@ Multiple cleanup scripts for different scenarios:
 ```bash
 ./scripts/quick-cleanup.sh
 ```
-- Stops all chaos testing processes (including continuous-publisher)
+- Stops all chaos testing processes
 - Cleans up PID files and locks
-- Preserves Terraform resources and logs
+- Preserves broker resources and logs
 - Use when you want to restart quickly
 
 ### Consumer Cleanup
@@ -272,21 +272,20 @@ Multiple cleanup scripts for different scenarios:
 - Optionally backs up and cleans logs
 - Optionally cleans SDKPerf extracted files
 - Optionally resets .env to template
-- Optionally destroys Terraform resources
+- Optionally destroys SEMP-provisioned broker resources
 
-### Terraform Resources Only
+### SEMP Resources Only
 ```bash
-./scripts/terraform-cleanup.sh
+./scripts/semp-provision.sh destroy
 ```
-- Focused on destroying broker resources
-- Shows destruction plan before proceeding
-- Backs up Terraform state files
+- Focused on destroying broker resources (VPNs, queues, users, bridges)
+- Shows what will be deleted before proceeding
 - Multiple confirmation prompts for safety
 - Use when you want to reset broker configuration
 
 ⚠️ **Cleanup Safety Notes:**
-- Always check what's running with `./scripts/chaos-daemon.sh status` first
-- Terraform cleanup is **destructive** - it removes all broker resources
+- Always check what's running with `./scripts/status-check.sh` first
+- Resource cleanup is **destructive** - it removes all broker configuration
 - Full cleanup can reset your .env file to defaults
 - Logs are backed up before deletion (optional)
 - Use quick cleanup for routine restarts
@@ -294,24 +293,25 @@ Multiple cleanup scripts for different scenarios:
 ## Logs
 
 Structured logging in `logs/` directory:
-- `master-chaos-*.log`: Main orchestrator
-- `continuous-publisher.log`: High-rate publisher for queue buildup
-- `baseline-*.log`: Baseline traffic (should always be healthy)
-- `queue-killer.log`: Queue overflow testing
+- `run-chaos-*.log`: Main orchestrator
+- `traffic-*.log`: Traffic generator logs (market-data, trade-flow)
+- `chaos-*.log`: Error generator scenarios
+- `semp-provision.log`: SEMP API provisioning operations
 - `acl-violator.log`: ACL violation testing  
 - `connection-bomber.log`: Connection limit testing
 - `bridge-killer.log`: Cross-VPN bridge testing
 
 ### Log Analysis
 ```bash
-# Monitor queue buildup progress
-tail -f logs/continuous-publisher.log
+# Monitor traffic generators
+tail -f logs/traffic-market-data.log
+tail -f logs/traffic-trade-flow.log
 
 # Check for errors across all logs
 grep -i error logs/*.log
 
 # Monitor message rates
-grep "msgs/sec" logs/continuous-publisher.log | tail -5
+grep "rate" logs/traffic-*.log | tail -10
 ```
 
 ## Stopping
@@ -320,17 +320,18 @@ grep "msgs/sec" logs/continuous-publisher.log | tail -5
 Stop gracefully with Ctrl+C in the master orchestrator terminal. All components will be cleanly terminated.
 
 ### Background Processes
-For processes started with nohup:
+For processes started in background:
 ```bash
 ./scripts/quick-cleanup.sh              # Stops all processes including background ones
 # Or manually:
-pkill -f continuous-publisher.sh       # Stop specific background publisher
+pkill -f "run-chaos.sh"                # Stop orchestrator
+pkill -f "traffic-generator.sh"        # Stop traffic generators
+pkill -f "chaos-generator.sh"          # Stop chaos generators
 ```
 
 ### Complete System Stop
 ```bash
-./chaos.sh stop                        # Stops master chaos and continuous publisher
-./scripts/chaos-daemon.sh stop         # Alternative: stop via daemon
+./chaos.sh stop                        # Stops all chaos components
 ```
 
 ## Troubleshooting
@@ -342,19 +343,19 @@ pkill -f continuous-publisher.sh       # Stop specific background publisher
 
 ### Queue Issues  
 1. **No queue buildup**: 
-   - Check if continuous-publisher is running: `ps aux | grep continuous-publisher`
-   - Verify publisher rate: `tail -f logs/continuous-publisher.log`
-   - Check consumer count: `./scripts/queue-manager.sh status`
+   - Check if traffic generators are running: `ps aux | grep traffic-generator`
+   - Verify publisher rate: `tail -f logs/traffic-*.log`
+   - Check chaos generators: `ps aux | grep chaos-generator`
 2. **Multiple consumers**: Run `./scripts/cleanup-excess-consumers.sh`
-3. **Queue access denied**: Verify exclusive queue configuration in terraform
+3. **Queue access denied**: Verify queue permissions via SEMP
 
 ### Infrastructure Issues
-1. **Terraform state**: Check `terraform/environments/base/terraform.tfstate`
-2. **Queue configuration**: `grep access_type terraform/environments/base/main.tf`
-3. **Provider issues**: Check Solace provider configuration
+1. **SEMP provisioning**: Check `logs/semp-provision.log` for errors
+2. **Broker connectivity**: Verify SEMP_HOST and SEMP_PORT in `.env`
+3. **Authorization errors**: Check user permissions and authorization level
 
 ### Performance Issues
-1. **Low message rates**: Verify non-persistent message configuration
+1. **Low message rates**: Check traffic generator configuration
 2. **Publisher failures**: Check SDKPerf logs for connection issues  
 3. **Throughput limits**: Solace Standard Edition has 10K msg/sec limit
 
@@ -387,14 +388,13 @@ Perfect for testing monitoring and alerting systems in financial services enviro
 |--------|---------|-------|
 | `bootstrap-chaos-environment.sh` | Complete environment setup | `./bootstrap-chaos-environment.sh` |
 | `scripts/load-env.sh` | Load environment variables | `source scripts/load-env.sh` |
+| `scripts/semp-provision.sh` | SEMP API provisioning | `./scripts/semp-provision.sh [create\|destroy]` |
 
 ### Core Operations  
 | Script | Purpose | Usage |
 |--------|---------|-------|
-| `chaos.sh` | Master control script | `./chaos.sh [start\|stop]` |
-| `scripts/master-chaos.sh` | Main chaos orchestrator | `./scripts/master-chaos.sh` |
-| `scripts/continuous-publisher.sh` | High-rate queue buildup | `./scripts/continuous-publisher.sh` |
-| `scripts/chaos-daemon.sh` | Process management daemon | `./scripts/chaos-daemon.sh [start\|stop\|status\|restart\|daemon]` |
+| `chaos.sh` | Master control wrapper | `./chaos.sh [start\|stop]` |
+| `run-chaos.sh` | Main chaos orchestrator | `bash run-chaos.sh &` |
 
 ### Monitoring & Status
 | Script | Purpose | Usage |
@@ -402,28 +402,30 @@ Perfect for testing monitoring and alerting systems in financial services enviro
 | `scripts/status-check.sh` | System status overview | `./scripts/status-check.sh` |
 | `scripts/queue-manager.sh` | Queue monitoring & management | `./scripts/queue-manager.sh [status\|clear]` |
 
-### Error Generators
+### Error Generators (Unified)
 | Script | Purpose | Usage |
 |--------|---------|-------|
-| `error-generators/queue-killer.sh` | Queue overflow testing | `./error-generators/queue-killer.sh` |
-| `error-generators/multi-vpn-acl-violator.sh` | ACL violation testing | `./error-generators/multi-vpn-acl-violator.sh` |
-| `error-generators/market-data-connection-bomber.sh` | Connection limit testing | `./error-generators/market-data-connection-bomber.sh` |
-| `error-generators/cross-vpn-bridge-killer.sh` | Bridge stress testing | `./error-generators/cross-vpn-bridge-killer.sh` |
+| `error-generators/chaos-generator.sh` | All chaos scenarios | `./error-generators/chaos-generator.sh --scenario [queue-killer\|acl-violation\|connection-storm\|bridge-stress]` |
 
-### Traffic Generators
+### Traffic Generators (Unified)
 | Script | Purpose | Usage |
 |--------|---------|-------|
-| `traffic-generators/baseline-market-data.sh` | Baseline market data | `./traffic-generators/baseline-market-data.sh` |
-| `traffic-generators/baseline-trade-flow.sh` | Baseline trade flow | `./traffic-generators/baseline-trade-flow.sh` |
+| `traffic-generators/traffic-generator.sh` | All traffic patterns | `./traffic-generators/traffic-generator.sh --mode [market-data\|trade-flow]` |
 
 ### Cleanup & Maintenance
 | Script | Purpose | Usage |
 |--------|---------|-------|
 | `scripts/quick-cleanup.sh` | Stop processes only | `./scripts/quick-cleanup.sh` |
 | `scripts/full-cleanup.sh` | Interactive complete cleanup | `./scripts/full-cleanup.sh` |
-| `scripts/terraform-cleanup.sh` | Terraform resources only | `./scripts/terraform-cleanup.sh` |
 | `scripts/cleanup-excess-consumers.sh` | Remove excess consumers | `./scripts/cleanup-excess-consumers.sh` |
 | `scripts/kill-all-sdkperf.sh` | Kill all SDKPerf processes | `./scripts/kill-all-sdkperf.sh` |
+
+### Utility Scripts
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `scripts/semp-lib.sh` | SEMP API library functions | Source in other scripts |
+| `scripts/config-parser.sh` | Configuration parsing utilities | Source in other scripts |
+| `scripts/sdkperf-wrapper.sh` | SDKPerf management wrapper | Internal use |
 
 ### Common Workflows
 
@@ -432,27 +434,30 @@ Perfect for testing monitoring and alerting systems in financial services enviro
 # Method 1: Simple start
 ./chaos.sh start
 
-# Method 2: Component control  
-./scripts/chaos-daemon.sh start
-./scripts/continuous-publisher.sh &
+# Method 2: Direct orchestrator
+bash run-chaos.sh &
 ```
 
-#### Monitor Queue Buildup
+#### Monitor System
 ```bash
 # Check queue status
 ./scripts/queue-manager.sh status
 
-# Watch continuous publisher
-tail -f logs/continuous-publisher.log
+# Watch orchestrator logs
+tail -f logs/run-chaos-*.log
 
 # System overview
 ./scripts/status-check.sh
+
+# Monitor specific traffic
+tail -f logs/traffic-market-data.log
+tail -f logs/traffic-trade-flow.log
 ```
 
 #### Troubleshoot Issues
 ```bash
 # Check running processes
-./scripts/chaos-daemon.sh status
+ps aux | grep -E "(run-chaos|traffic-generator|chaos-generator)"
 
 # Clean excess consumers  
 ./scripts/cleanup-excess-consumers.sh
@@ -465,9 +470,6 @@ grep -i error logs/*.log
 ```bash
 # Stop everything gracefully
 ./chaos.sh stop
-
-# Or via daemon
-./scripts/chaos-daemon.sh stop
 
 # Quick process cleanup
 ./scripts/quick-cleanup.sh

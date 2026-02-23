@@ -108,10 +108,11 @@ generate_market_data() {
         # Use sdkperf-wrapper for connection
         local conn=$(sdkperf_get_connection "market-feed")
         
-        chaos_log "traffic-generator" "SDKPerf command: ${SDKPERF_SCRIPT_PATH} ${conn} -ptl=... -mr=${current_rate}"
+        chaos_log "traffic-generator" "SDKPerf command: ${SDKPERF_SCRIPT_PATH} ${conn} -ptl=... -stl=... -mr=${current_rate}"
         
         ${SDKPERF_SCRIPT_PATH} ${conn} \
             -ptl="market-data/equities/quotes/NYSE/AAPL,market-data/equities/quotes/NASDAQ/MSFT,market-data/equities/quotes/LSE/GOOGL" \
+            -stl="market-data/equities/quotes/>" \
             -mr="${current_rate}" \
             -mn=999999999999999999 \
             -msa=256 \
