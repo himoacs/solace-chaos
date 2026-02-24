@@ -193,17 +193,44 @@ trim_logs() {
             local file_mb=$((file_size / 1024 / 1024))
             log "Trimming $log_file (${file_mb}MB > ${LOG_MAX_SIZE_MB:-50}MB)..."
             
-            # Keep last N lines
-            tail -n "$keep_lines" "$log_file" > "${log_file}.tmp" 2>/dev/null
-            if [[ -f "${log_file}.tmp" ]]; then
-                mv "${log_file}.tmp" "$log_file"
-                trimmed_count=$((trimmed_count + 1))
+            # For very large files (>1GB), use more efficient truncation
+            if (( file_size > 1073741824 )); then
+                log "  Large file detected (${file_mb}MB) - using efficient truncation..."
+                # Create backup of last portion using efficient byte-offset method
+                local backup_size=$((keep_lines * 200))  # Approximate 200 bytes per line
+                
+                # Use dd for efficient extraction of last portion
+                if command -v dd &> /dev/null; then
+                    local skip_bytes=$((file_size - backup_size))
+                    [[ $skip_bytes -lt 0 ]] && skip_bytes=0
+                    
+                    dd if="$log_file" of="${log_file}.tmp" bs=1M skip=$((skip_bytes / 1048576)) 2>/dev/null || {
+                        log "  DD failed, truncating to empty and adding marker..."
+                        echo "$(date) - Log file exceeded ${file_mb}MB and was truncated" > "${log_file}.tmp"
+                    }
+                else
+                    # Fallback: just truncate and add marker
+                    log "  Truncating to empty and adding marker..."
+                    echo "$(date) - Log file exceeded ${file_mb}MB and was truncated" > "${log_file}.tmp"
+                fi
+                
+                if [[ -f "${log_file}.tmp" ]]; then
+                    mv "${log_file}.tmp" "$log_file"
+                    trimmed_count=$((trimmed_count + 1))
+                fi
+            else
+                # For smaller files, use tail (safe and fast)
+                tail -n "$keep_lines" "$log_file" > "${log_file}.tmp" 2>/dev/null
+                if [[ -f "${log_file}.tmp" ]]; then
+                    mv "${log_file}.tmp" "$log_file"
+                    trimmed_count=$((trimmed_count + 1))
+                fi
             fi
         fi
     done
     
     if (( trimmed_count > 0 )); then
-        log "Trimmed $trimmed_count log file(s) to last $keep_lines lines each"
+        log "Trimmed $trimmed_count log file(s)"
     else
         log "No log files require trimming"
     fi
@@ -296,8 +323,9 @@ main_loop() {
             show_status
         fi
         
-        # Cleanup old logs every 10 health checks (if log file > max size)
-        if (( iteration % 10 == 0 )); then
+        # Trim logs more frequently - every 2 health checks (10-20 minutes)
+        # This prevents logs from growing to massive sizes
+        if (( iteration % ${LOG_TRIM_FREQUENCY:-2} == 0 )); then
             trim_logs
         fi
     done
