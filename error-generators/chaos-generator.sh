@@ -19,8 +19,8 @@ Chaos Scenarios:
 
 Queue Killer Options:
   --target-queue NAME   Queue to fill (default: equity_order_queue)
-  --burst-size NUM      Messages per burst (default: 100000)
-  --burst-interval SEC  Seconds between bursts (default: 1800)
+  --burst-duration SEC  Duration of burst in seconds (default: 10)
+  --inter-burst SEC     Inter-burst gap duration in seconds (default: 30)
   --message-size BYTES  Message size in bytes (default: 5000)
   --cycle-interval SEC  Restart interval (default: from .env)
 
@@ -43,7 +43,7 @@ Common Options:
 
 Examples:
   $0 --scenario queue-killer
-  $0 --scenario queue-killer --target-queue baseline_queue --burst-size 50000
+  $0 --scenario queue-killer --target-queue baseline_queue --burst-duration 20 --inter-burst 60
   $0 --scenario acl-violation --test-user restricted-trade
   $0 --scenario connection-storm --connection-count 50
 EOF
@@ -53,8 +53,8 @@ EOF
 # Parse command line arguments
 SCENARIO=""
 TARGET_QUEUE="equity_order_queue"
-BURST_SIZE="100000"
-BURST_INTERVAL="1800"
+BURST_DURATION="10"
+INTER_BURST_DURATION="30"
 MESSAGE_SIZE="5000"
 CYCLE_INTERVAL=""
 TEST_USER="restricted-market"
@@ -75,12 +75,12 @@ while [[ $# -gt 0 ]]; do
             TARGET_QUEUE="$2"
             shift 2
             ;;
-        --burst-size)
-            BURST_SIZE="$2"
+        --burst-duration)
+            BURST_DURATION="$2"
             shift 2
             ;;
-        --burst-interval)
-            BURST_INTERVAL="$2"
+        --inter-burst)
+            INTER_BURST_DURATION="$2"
             shift 2
             ;;
         --message-size)
@@ -144,7 +144,7 @@ fi
 # Queue killer scenario
 scenario_queue_killer() {
     chaos_log "chaos-generator" "Starting queue-killer scenario (queue: ${TARGET_QUEUE})"
-    chaos_log "chaos-generator" "Parameters: burst=${BURST_SIZE}, interval=${BURST_INTERVAL}s, size=${MESSAGE_SIZE}B"
+    chaos_log "chaos-generator" "Parameters: burst_duration=${BURST_DURATION}s, inter_burst=${INTER_BURST_DURATION}s, size=${MESSAGE_SIZE}B"
     
     # Get queue VPN
     local target_vpn=$(get_queue_config "$TARGET_QUEUE" "vpn")
@@ -162,9 +162,9 @@ scenario_queue_killer() {
         ${SDKPERF_SCRIPT_PATH} ${pub_conn} \
             -ptl="trading/orders/equities/NYSE/new" \
             -mt=persistent \
-            -mr=0 \
-            -mbs="${BURST_SIZE}" \
-            -mbi="${BURST_INTERVAL}" \
+            -mr=10000 \
+            -bd="${BURST_DURATION}" \
+            -ibd="${INTER_BURST_DURATION}" \
             -msa="${MESSAGE_SIZE}" \
             -mn=999999999999999999 \
             -q >> "$LOG_FILE" 2>&1 &
@@ -176,8 +176,7 @@ scenario_queue_killer() {
         local drain_conn=$(sdkperf_get_connection "order-router")
         
         ${SDKPERF_SCRIPT_PATH} ${drain_conn} \
-            -pql="${TARGET_QUEUE}" \
-            -mn=999999999999999999 \
+            -sql="${TARGET_QUEUE}" \
             -q >> "$LOG_FILE" 2>&1 &
         
         local drain_pid=$!

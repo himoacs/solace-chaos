@@ -153,7 +153,7 @@ generate_trade_flow() {
             -stl="trading/orders/>" \
             -mr="${current_rate}" \
             -mn=999999999999999999 \
-            -pql=100 \
+            -msa=512 \
             -q >> "$LOG_FILE" 2>&1 &
         
         local pub_pid=$!
@@ -163,8 +163,7 @@ generate_trade_flow() {
         local sub_conn=$(sdkperf_get_connection "trade-processor")
         
         ${SDKPERF_SCRIPT_PATH} ${sub_conn} \
-            -pql=baseline_queue \
-            -mn=999999999999999999 \
+            -sql=baseline_queue \
             -md \
             -q >> "$LOG_FILE" 2>&1 &
         

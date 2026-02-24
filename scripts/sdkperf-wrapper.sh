@@ -72,7 +72,6 @@ sdkperf_publish() {
     # Build command
     local cmd="${SDKPERF_SCRIPT_PATH} ${base_conn}"
     
-    [[ -n "$topics" ]] && cmd+=" -mt=persistent -mn=999999999 -mr=999999999 -pql=100"
     [[ -n "$topics" ]] && cmd+=" -mt=persistent -ptl=${topics}"
     [[ -n "$rate" ]] && cmd+=" -mr=${rate}"
     
@@ -123,7 +122,7 @@ sdkperf_subscribe() {
     # Build command
     local cmd="${SDKPERF_SCRIPT_PATH} ${base_conn}"
     
-    [[ -n "$queue" ]] && cmd+=" -pql=${queue}"
+    [[ -n "$queue" ]] && cmd+=" -sql=${queue}"
     
     # Add additional arguments
     for arg in "${additional_args[@]}"; do
