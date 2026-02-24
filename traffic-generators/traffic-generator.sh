@@ -124,9 +124,38 @@ generate_market_data() {
         # Wait for restart interval
         sleep "$restart_interval"
         
-        # Kill and restart
-        kill "$pid" 2>/dev/null
-        wait "$pid" 2>/dev/null
+        # Enhanced graceful shutdown with verification
+        chaos_log "traffic-generator" "Initiating graceful shutdown of market data generator (PID: $pid)"
+        
+        # Send SIGTERM for graceful shutdown
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null
+            
+            # Wait up to 10 seconds for graceful termination
+            local wait_count=0
+            while kill -0 "$pid" 2>/dev/null && [ $wait_count -lt 10 ]; do
+                sleep 1
+                wait_count=$((wait_count + 1))
+            done
+            
+            # Force kill if still running
+            if kill -0 "$pid" 2>/dev/null; then
+                chaos_log "traffic-generator" "Process did not terminate gracefully, forcing shutdown"
+                kill -9 "$pid" 2>/dev/null
+                sleep 2
+            else
+                chaos_log "traffic-generator" "Process terminated gracefully"
+            fi
+            
+            wait "$pid" 2>/dev/null
+        fi
+        
+        # Additional safety: ensure no orphaned SDKPerf processes
+        pkill -f "market-data.*${current_rate}" 2>/dev/null || true
+        
+        # Grace period before restart to ensure broker-side cleanup
+        sleep 3
+        
         chaos_log "traffic-generator" "Market data cycle completed - restarting"
     done
 }
@@ -173,9 +202,49 @@ generate_trade_flow() {
         # Wait for restart interval
         sleep "$restart_interval"
         
-        # Kill and restart
-        kill "$pub_pid" "$sub_pid" 2>/dev/null
-        wait "$pub_pid" "$sub_pid" 2>/dev/null
+        # Enhanced graceful shutdown with verification for both processes
+        chaos_log "traffic-generator" "Initiating graceful shutdown of trade flow generators (Publisher PID: $pub_pid, Subscriber PID: $sub_pid)"
+        
+        # Shutdown publisher
+        if kill -0 "$pub_pid" 2>/dev/null; then
+            kill "$pub_pid" 2>/dev/null
+            
+            local wait_count=0
+            while kill -0 "$pub_pid" 2>/dev/null && [ $wait_count -lt 10 ]; do
+                sleep 1
+                wait_count=$((wait_count + 1))
+            done
+            
+            if kill -0 "$pub_pid" 2>/dev/null; then
+                chaos_log "traffic-generator" "Publisher did not terminate gracefully, forcing shutdown"
+                kill -9 "$pub_pid" 2>/dev/null
+            fi
+            wait "$pub_pid" 2>/dev/null
+        fi
+        
+        # Shutdown subscriber
+        if kill -0 "$sub_pid" 2>/dev/null; then
+            kill "$sub_pid" 2>/dev/null
+            
+            local wait_count=0
+            while kill -0 "$sub_pid" 2>/dev/null && [ $wait_count -lt 10 ]; do
+                sleep 1
+                wait_count=$((wait_count + 1))
+            done
+            
+            if kill -0 "$sub_pid" 2>/dev/null; then
+                chaos_log "traffic-generator" "Subscriber did not terminate gracefully, forcing shutdown"
+                kill -9 "$sub_pid" 2>/dev/null
+            fi
+            wait "$sub_pid" 2>/dev/null
+        fi
+        
+        # Additional safety: cleanup orphaned processes
+        pkill -f "trade-flow.*${current_rate}" 2>/dev/null || true
+        
+        # Grace period before restart
+        sleep 3
+        
         chaos_log "traffic-generator" "Trade flow cycle completed - restarting"
     done
 }
@@ -184,8 +253,39 @@ generate_trade_flow() {
 cleanup() {
     chaos_log "traffic-generator" "Shutting down ${MODE} traffic generator"
     
-    # Kill any remaining SDKPerf processes
+    # Read and kill tracked PIDs
+    if [ -f "logs/pids/market-data-traffic.pid" ]; then
+        local pid=$(cat "logs/pids/market-data-traffic.pid" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null
+            sleep 2
+            kill -9 "$pid" 2>/dev/null
+        fi
+    fi
+    
+    if [ -f "logs/pids/trade-flow-publisher.pid" ]; then
+        local pid=$(cat "logs/pids/trade-flow-publisher.pid" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null
+            sleep 2
+            kill -9 "$pid" 2>/dev/null
+        fi
+    fi
+    
+    if [ -f "logs/pids/trade-flow-subscriber.pid" ]; then
+        local pid=$(cat "logs/pids/trade-flow-subscriber.pid" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null
+            sleep 2
+            kill -9 "$pid" 2>/dev/null
+        fi
+    fi
+    
+    # Kill any remaining SDKPerf processes related to this mode
     pkill -f "${MODE}-traffic" 2>/dev/null
+    
+    # Grace period for broker-side cleanup
+    sleep 2
     
     exit 0
 }
