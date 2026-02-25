@@ -167,7 +167,7 @@ scenario_queue_killer() {
             -ibd="${INTER_BURST_DURATION}" \
             -msa="${MESSAGE_SIZE}" \
             -mn=999999999999999999 \
-            -q >> "$LOG_FILE" 2>&1 &
+            -q > /dev/null 2>&1 &
         
         local burst_pid=$!
         echo "$burst_pid" > "logs/pids/queue-killer-burst.pid"
@@ -177,7 +177,7 @@ scenario_queue_killer() {
         
         ${SDKPERF_SCRIPT_PATH} ${drain_conn} \
             -sql="${TARGET_QUEUE}" \
-            -q >> "$LOG_FILE" 2>&1 &
+            -q > /dev/null 2>&1 &
         
         local drain_pid=$!
         echo "$drain_pid" > "logs/pids/queue-killer-drain.pid"
@@ -187,8 +187,20 @@ scenario_queue_killer() {
         # Run for cycle duration
         sleep "$CYCLE_INTERVAL"
         
-        kill "$burst_pid" "$drain_pid" 2>/dev/null
-        wait "$burst_pid" "$drain_pid" 2>/dev/null
+        # SYNCHRONOUS cleanup
+        chaos_log "chaos-generator" "Stopping queue-killer SDKPerf processes..."
+        kill -9 "$burst_pid" "$drain_pid" 2>/dev/null || true
+        pkill -9 -f "chaos-generator.*ptl=trading" 2>/dev/null || true
+        pkill -9 -f "order-router.*sql=${TARGET_QUEUE}" 2>/dev/null || true
+        
+        # Verify dead
+        for i in {1..5}; do
+            if ! pgrep -f "chaos-generator.*trading" >/dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
+        
         chaos_log "chaos-generator" "Queue killer cycle completed - restarting"
     done
 }
@@ -209,7 +221,7 @@ scenario_acl_violation() {
             -mr="${VIOLATION_RATE}" \
             -mn=999999999999999999 \
             -msa=256 \
-            -q >> "$LOG_FILE" 2>&1 &
+            -q > /dev/null 2>&1 &
         
         local acl_pid=$!
         echo "$acl_pid" > "logs/pids/acl-violation.pid"
@@ -217,8 +229,19 @@ scenario_acl_violation() {
         # Run for 1 hour
         sleep 3600
         
-        kill "$acl_pid" 2>/dev/null
-        wait "$acl_pid" 2>/dev/null
+        # SYNCHRONOUS cleanup
+        chaos_log "chaos-generator" "Stopping ACL violation SDKPerf processes..."
+        kill -9 "$acl_pid" 2>/dev/null || true
+        pkill -9 -f "${TEST_USER}" 2>/dev/null || true
+        
+        # Verify dead
+        for i in {1..5}; do
+            if ! pgrep -f "${TEST_USER}" >/dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
+        
         chaos_log "chaos-generator" "ACL violation cycle completed - restarting"
     done
 }
@@ -238,7 +261,7 @@ scenario_connection_storm() {
             -cfl="${CONNECTION_COUNT}" \
             -mr=1 \
             -mn=999999999999999999 \
-            -q >> "$LOG_FILE" 2>&1 &
+            -q > /dev/null 2>&1 &
         
         local storm_pid=$!
         echo "$storm_pid" > "logs/pids/connection-storm.pid"
@@ -246,8 +269,18 @@ scenario_connection_storm() {
         # Run for storm duration
         sleep "$STORM_DURATION"
         
-        kill "$storm_pid" 2>/dev/null
-        wait "$storm_pid" 2>/dev/null
+        # SYNCHRONOUS cleanup
+        chaos_log "chaos-generator" "Stopping connection storm SDKPerf processes..."
+        kill -9 "$storm_pid" 2>/dev/null || true
+        pkill -9 -f "market-consumer" 2>/dev/null || true
+        
+        # Verify dead
+        for i in {1..5}; do
+            if ! pgrep -f "market-consumer" >/dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
         
         chaos_log "chaos-generator" "Connection storm completed - cooling down"
         sleep 300  # 5 minute cooldown
@@ -275,7 +308,7 @@ scenario_bridge_stress() {
             -mr=5000 \
             -msa=10000 \
             -mn=999999999999999999 \
-            -q >> "$LOG_FILE" 2>&1 &
+            -q > /dev/null 2>&1 &
         
         local bridge_pid=$!
         echo "$bridge_pid" > "logs/pids/bridge-stress.pid"
@@ -283,8 +316,18 @@ scenario_bridge_stress() {
         # Attack duration
         sleep "$ATTACK_DURATION"
         
-        kill "$bridge_pid" 2>/dev/null
-        wait "$bridge_pid" 2>/dev/null
+        # SYNCHRONOUS cleanup
+        chaos_log "chaos-generator" "Stopping bridge stress SDKPerf processes..."
+        kill -9 "$bridge_pid" 2>/dev/null || true
+        pkill -9 -f "market-feed.*bridge-stress" 2>/dev/null || true
+        
+        # Verify dead
+        for i in {1..5}; do
+            if ! pgrep -f "market-feed.*bridge-stress" >/dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
         
         chaos_log "chaos-generator" "Bridge stress attack completed - sleeping"
         sleep "$SLEEP_INTERVAL"

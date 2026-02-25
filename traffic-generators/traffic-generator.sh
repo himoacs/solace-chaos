@@ -116,7 +116,7 @@ generate_market_data() {
             -mr="${current_rate}" \
             -mn=999999999999999999 \
             -msa=256 \
-            -q >> "$LOG_FILE" 2>&1 &
+            -q > /dev/null 2>&1 &
         
         local pid=$!
         echo "$pid" > "logs/pids/market-data-traffic.pid"
@@ -124,37 +124,24 @@ generate_market_data() {
         # Wait for restart interval
         sleep "$restart_interval"
         
-        # Enhanced graceful shutdown with verification
-        chaos_log "traffic-generator" "Initiating graceful shutdown of market data generator (PID: $pid)"
+        # SYNCHRONOUS cleanup - verify ALL old processes are dead
+        chaos_log "traffic-generator" "Stopping all market-feed SDKPerf processes..."
         
-        # Send SIGTERM for graceful shutdown
-        if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null
-            
-            # Wait up to 10 seconds for graceful termination
-            local wait_count=0
-            while kill -0 "$pid" 2>/dev/null && [ $wait_count -lt 10 ]; do
-                sleep 1
-                wait_count=$((wait_count + 1))
-            done
-            
-            # Force kill if still running
-            if kill -0 "$pid" 2>/dev/null; then
-                chaos_log "traffic-generator" "Process did not terminate gracefully, forcing shutdown"
-                kill -9 "$pid" 2>/dev/null
-                sleep 2
-            else
-                chaos_log "traffic-generator" "Process terminated gracefully"
+        # Kill tracked PID
+        kill -9 "$pid" 2>/dev/null || true
+        
+        # Kill ALL matching processes and WAIT for them to die
+        pkill -9 -f "market-feed" 2>/dev/null || true
+        
+        # Verify they're dead (wait up to 5 seconds)
+        for i in {1..5}; do
+            if ! pgrep -f "market-feed" >/dev/null 2>&1; then
+                break
             fi
-            
-            wait "$pid" 2>/dev/null
-        fi
+            sleep 1
+        done
         
-        # Additional safety: ensure no orphaned SDKPerf processes
-        pkill -f "market-data.*${current_rate}" 2>/dev/null || true
-        
-        # Grace period before restart to ensure broker-side cleanup
-        sleep 3
+        chaos_log "traffic-generator" "Cleanup complete - starting new cycle"
         
         chaos_log "traffic-generator" "Market data cycle completed - restarting"
     done
@@ -183,7 +170,7 @@ generate_trade_flow() {
             -mr="${current_rate}" \
             -mn=999999999999999999 \
             -msa=512 \
-            -q >> "$LOG_FILE" 2>&1 &
+            -q > /dev/null 2>&1 &
         
         local pub_pid=$!
         echo "$pub_pid" > "logs/pids/trade-flow-publisher.pid"
@@ -194,7 +181,7 @@ generate_trade_flow() {
         ${SDKPERF_SCRIPT_PATH} ${sub_conn} \
             -sql=baseline_queue \
             -md \
-            -q >> "$LOG_FILE" 2>&1 &
+            -q > /dev/null 2>&1 &
         
         local sub_pid=$!
         echo "$sub_pid" > "logs/pids/trade-flow-subscriber.pid"
@@ -202,48 +189,26 @@ generate_trade_flow() {
         # Wait for restart interval
         sleep "$restart_interval"
         
-        # Enhanced graceful shutdown with verification for both processes
-        chaos_log "traffic-generator" "Initiating graceful shutdown of trade flow generators (Publisher PID: $pub_pid, Subscriber PID: $sub_pid)"
+        # SYNCHRONOUS cleanup - verify ALL old processes are dead
+        chaos_log "traffic-generator" "Stopping all trade-flow SDKPerf processes..."
         
-        # Shutdown publisher
-        if kill -0 "$pub_pid" 2>/dev/null; then
-            kill "$pub_pid" 2>/dev/null
-            
-            local wait_count=0
-            while kill -0 "$pub_pid" 2>/dev/null && [ $wait_count -lt 10 ]; do
-                sleep 1
-                wait_count=$((wait_count + 1))
-            done
-            
-            if kill -0 "$pub_pid" 2>/dev/null; then
-                chaos_log "traffic-generator" "Publisher did not terminate gracefully, forcing shutdown"
-                kill -9 "$pub_pid" 2>/dev/null
+        # Kill tracked PIDs
+        kill -9 "$pub_pid" "$sub_pid" 2>/dev/null || true
+        
+        # Kill ALL matching processes
+        pkill -9 -f "order-router" 2>/dev/null || true
+        pkill -9 -f "trade-processor.*sql=baseline" 2>/dev/null || true
+        
+        # Verify they're dead (wait up to 5 seconds)
+        for i in {1..5}; do
+            if ! pgrep -f "order-router.*trading" >/dev/null 2>&1 && \
+               ! pgrep -f "trade-processor.*baseline" >/dev/null 2>&1; then
+                break
             fi
-            wait "$pub_pid" 2>/dev/null
-        fi
+            sleep 1
+        done
         
-        # Shutdown subscriber
-        if kill -0 "$sub_pid" 2>/dev/null; then
-            kill "$sub_pid" 2>/dev/null
-            
-            local wait_count=0
-            while kill -0 "$sub_pid" 2>/dev/null && [ $wait_count -lt 10 ]; do
-                sleep 1
-                wait_count=$((wait_count + 1))
-            done
-            
-            if kill -0 "$sub_pid" 2>/dev/null; then
-                chaos_log "traffic-generator" "Subscriber did not terminate gracefully, forcing shutdown"
-                kill -9 "$sub_pid" 2>/dev/null
-            fi
-            wait "$sub_pid" 2>/dev/null
-        fi
-        
-        # Additional safety: cleanup orphaned processes
-        pkill -f "trade-flow.*${current_rate}" 2>/dev/null || true
-        
-        # Grace period before restart
-        sleep 3
+        chaos_log "traffic-generator" "Cleanup complete - starting new cycle"
         
         chaos_log "traffic-generator" "Trade flow cycle completed - restarting"
     done

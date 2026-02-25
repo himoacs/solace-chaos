@@ -134,6 +134,23 @@ health_check() {
             COMPONENT_RESTARTS[$i]=$restart_count
             
             log "Restarting $component (attempt #$restart_count) in ${RESTART_DELAY}s..."
+            
+            # CRITICAL: Kill orphaned SDKPerf processes before restarting
+            log "Cleaning up orphaned SDKPerf processes for $component..."
+            if [[ "$component" == "traffic-market-data" ]]; then
+                pkill -9 -f "market-feed" 2>/dev/null || true
+            elif [[ "$component" == "traffic-trade-flow" ]]; then
+                pkill -9 -f "order-router" 2>/dev/null || true
+                pkill -9 -f "trade-processor.*baseline" 2>/dev/null || true
+            elif [[ "$component" == "chaos-queue-killer" ]]; then
+                pkill -9 -f "chaos-generator" 2>/dev/null || true
+            elif [[ "$component" == "chaos-acl-violation" ]]; then
+                pkill -9 -f "restricted-" 2>/dev/null || true
+            elif [[ "$component" == "chaos-bridge-stress" ]]; then
+                pkill -9 -f "bridge-stress" 2>/dev/null || true
+            fi
+            sleep 3
+            
             sleep "$RESTART_DELAY"
             
             # Restart based on component type
@@ -149,9 +166,6 @@ health_check() {
                         ;;
                     acl-violation)
                         start_chaos_generator "acl-violation"
-                        ;;
-                    connection-storm)
-                        start_chaos_generator "connection-storm"
                         ;;
                     bridge-stress)
                         if [[ "${ENABLE_CROSS_VPN_BRIDGE}" == "true" ]]; then
@@ -288,7 +302,7 @@ startup() {
     log "Starting chaos generators..."
     start_chaos_generator "queue-killer"
     start_chaos_generator "acl-violation"
-    start_chaos_generator "connection-storm"
+    # connection-storm removed to reduce noise
     
     # Start bridge stress only if bridges are enabled
     if [[ "${ENABLE_CROSS_VPN_BRIDGE}" == "true" ]]; then
